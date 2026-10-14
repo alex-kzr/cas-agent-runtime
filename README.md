@@ -25,7 +25,7 @@ have provider `local-validation`, null SDK outcome/usage and real assertion evid
 There is no selectable fake task provider. Unit tests explicitly inject test doubles.
 
 Live tasks require `task run --file task.md --allow-live --max-turns N --max-budget-usd B`,
-positive wall timeout and external `ANTHROPIC_API_KEY`. Do not run this as a setup check.
+positive wall timeout and explicit auth-profile prerequisites. Do not run this as a setup check.
 No live model has been called. Default `text-only-v1` disables every tool. Optional `--agent read-only-v1 --workspace
 <directory-under-CAS-workspace-root>` permits only bounded Read, with path/secret-file
 policy and explicit deny on filesystem errors. Both profiles disable MCP/skills/plugins
@@ -40,7 +40,7 @@ schema snapshots packaged here. See [baseline evidence](docs/BASELINE.md).
 ## Prepared native baseline (requires separate authorization)
 
 After explicit spend approval and an externally supplied native key, the prepared
-command is `cas-cli scenarios run sdk.fundamentals --model claude-haiku-5-5 --allow-live --max-turns 1
+command is `cas-cli --auth-mode api scenarios run sdk.fundamentals --model claude-haiku-5-5 --allow-live --max-turns 1
 --max-budget-usd 0.10 --timeout-seconds 60` (one shell line). These are example
 limits for operator review, not authorization to run. Both the exact baseline marker
 and successful native result must pass; missing native fields remain unknown.
@@ -59,3 +59,9 @@ Unknown cleanup is INTERRUPTED; timeout stays INTERRUPTED even if the tree was r
 This does not guarantee provider-side cancellation, a hard invoice ceiling, or total
 CLI completion within the worker deadline plus cleanup grace. Supervised live execution
 fails closed outside Windows. Offline commands and the single executor remain available.
+
+Current auth policy: **subscription by default**, with separate per-invocation
+`--allow-existing-login` and `--allow-live` consent. Explicit `--auth-mode api` retains
+external-key execution with isolated state. No fallback between profiles, login, token
+copy or persistent reuse grant is automatic. Doctor reports selected mode without
+opening the native store. Native status/model behavior remains live-unverified.

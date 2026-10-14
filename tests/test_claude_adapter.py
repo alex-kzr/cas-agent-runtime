@@ -44,6 +44,7 @@ class AdapterTests(unittest.IsolatedAsyncioTestCase):
                 Limits(2, "0.1", 5),
                 scenario_id="sdk.fundamentals",
                 live_authorized=True,
+                auth_mode="api",
             )
             with patch(
                 "agent_runtime.providers.claude.client.ClaudeSDKClient",
@@ -91,6 +92,7 @@ class AdapterTests(unittest.IsolatedAsyncioTestCase):
                 Limits(2, "0.1", 5),
                 scenario_id="sdk.fundamentals",
                 live_authorized=True,
+                auth_mode="api",
             )
             with patch(
                 "agent_runtime.providers.claude.client.ClaudeSDKClient", return_value=MarkerStream()
@@ -142,6 +144,7 @@ class AdapterTests(unittest.IsolatedAsyncioTestCase):
                 root / "workspaces/one",
                 Limits(2, "0.1", 5),
                 live_authorized=True,
+                auth_mode="api",
             )
             with patch(
                 "agent_runtime.providers.claude.client.ClaudeSDKClient", return_value=FailedStream()
@@ -158,7 +161,12 @@ class AdapterTests(unittest.IsolatedAsyncioTestCase):
 
     def request(self, root, authorized=False):
         return ExecutionRequest(
-            "task", "fixture", root / "workspace", Limits(2, "0.1", 5), live_authorized=authorized
+            "task",
+            "fixture",
+            root / "workspace",
+            Limits(2, "0.1", 5),
+            live_authorized=authorized,
+            auth_mode="api",
         )
 
     async def test_no_client_construction_without_explicit_opt_in(self):

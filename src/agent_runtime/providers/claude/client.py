@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import json
 import os
 from collections.abc import Mapping
 from dataclasses import asdict, is_dataclass
@@ -15,28 +16,20 @@ from claude_agent_sdk import (
     ResultMessage,
 )
 
+from agent_runtime.providers.claude.auth import (
+    SUBSCRIPTION_SETTINGS,
+    SYSTEM_ENV,
+    auth_environment,
+    native_cli,
+    require_auth,
+    subscription_status,
+)
 from agent_runtime.providers.claude.permissions import read_allowed
 from agent_runtime.tasks.executor import NativeResult
 from agent_runtime.tasks.models import ExecutionRequest, sdk_succeeded
 from agent_runtime.telemetry.events import observe_message
 from agent_runtime.telemetry.metrics import ObservedUsage
 from agent_runtime.telemetry.recorder import Recorder
-
-SYSTEM_ENV = {
-    "PATH",
-    "SYSTEMROOT",
-    "WINDIR",
-    "TEMP",
-    "TMP",
-    "COMSPEC",
-    "PATHEXT",
-    "USERPROFILE",
-    "HOMEDRIVE",
-    "HOMEPATH",
-    "LOCALAPPDATA",
-    "APPDATA",
-    "LANG",
-}
 
 
 class ClaudeAdapter:
@@ -123,11 +116,18 @@ class ClaudeAdapter:
         # variables so external credentials/endpoints/settings do not leak to the child.
         environment = {key: "" for key in os.environ if key.upper() not in SYSTEM_ENV}
         environment.update(
-            {key: value for key, value in self.environment.items() if key.upper() in SYSTEM_ENV}
+            auth_environment(
+                request,
+                self.environment,
+                recorder.directory / "sdk-state",
+                forbidden_roots=(recorder.data_dir,),
+            )
         )
-        environment["ANTHROPIC_API_KEY"] = self.environment.get("ANTHROPIC_API_KEY", "")
-        environment["CLAUDE_CONFIG_DIR"] = str(recorder.directory / "sdk-state")
         return ClaudeAgentOptions(
+            cli_path=str(native_cli()),
+            settings=json.dumps(SUBSCRIPTION_SETTINGS)
+            if request.auth_mode == "subscription"
+            else None,
             tools=["Read"] if request.agent_name == "read-only-v1" else [],
             allowed_tools=[],
             setting_sources=[],
@@ -154,10 +154,27 @@ class ClaudeAdapter:
         )
 
     async def run(self, request: ExecutionRequest, recorder: Recorder) -> NativeResult:
-        if not request.live_authorized:
-            raise PermissionError("Live model execution requires explicit --allow-live")
-        if not self.environment.get("ANTHROPIC_API_KEY"):
-            raise ValueError("ANTHROPIC_API_KEY must be supplied externally for a live run")
+        require_auth(request, self.environment)
+        if request.auth_mode == "subscription":
+            selected = auth_environment(
+                request,
+                self.environment,
+                recorder.directory / "sdk-state",
+                forbidden_roots=(recorder.data_dir,),
+            )
+            blocked = [
+                name
+                for name in os.environ
+                if name.upper().startswith(("ANTHROPIC_", "CLAUDE_CODE_USE_"))
+                and name.upper() != "ANTHROPIC_CONFIG_DIR"
+            ]
+            if blocked or "CLAUDE_CODE_OAUTH_TOKEN" in os.environ:
+                raise ValueError(
+                    "Subscription SDK requires sanitized worker environment; no fallback"
+                )
+            info = subscription_status(request, selected)
+            recorder.record["configuration"].update(info)
+            recorder.event("auth.selected", info)
         result = None
         observed_usage = ObservedUsage()
         async with ClaudeSDKClient(options=self.options(request, recorder)) as client:

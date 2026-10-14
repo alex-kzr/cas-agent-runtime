@@ -172,7 +172,12 @@ class Recorder:
                 "python": platform.python_version(),
             },
             "instructions_ref": instructions_ref,
-            "configuration": {"agent": request.agent_name},
+            "configuration": {
+                "agent": request.agent_name,
+                "auth_mode": request.auth_mode,
+                "session_status": "not-checked",
+                "api_fallback": "disabled",
+            },
             "workspace": str(request.workspace),
             "limits": asdict(request.limits),
             "session_id": None,

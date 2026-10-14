@@ -21,6 +21,8 @@ class Configuration:
     console_host: str
     console_port: int
     provider: str = "claude"
+    auth_mode: str = "subscription"
+    login_config_dir: str | None = None
 
     @classmethod
     def load(
@@ -56,6 +58,29 @@ class Configuration:
             raise ValueError("Console requires 127.0.0.1 and port 1..65535")
         if provider != "claude":
             raise ValueError("Only provider claude is implemented")
+        auth_mode = value("auth_mode", "CAS_AUTH_MODE", "subscription")
+        if auth_mode not in {"subscription", "api"}:
+            raise ValueError("Auth mode must be subscription or api")
+        login_config = value(
+            "login_config_dir", "CAS_NATIVE_CONFIG_DIR", environment.get("CLAUDE_CONFIG_DIR")
+        )
+        if login_config is not None:
+            chosen = Path(login_config).expanduser()
+            if not chosen.is_absolute():
+                raise ValueError("Native login directory must be absolute and outside CAS")
+            chosen = chosen.resolve()
+            if chosen.is_relative_to(root) or chosen.is_relative_to(data):
+                raise ValueError("Native login directory must remain outside CAS and its data")
+            login_config = str(chosen)
+        elif auth_mode == "subscription" and (
+            environment.get("USERPROFILE") or environment.get("HOME")
+        ):
+            derived = (
+                Path(environment.get("USERPROFILE") or environment.get("HOME") or Path.home())
+                / ".claude"
+            ).resolve()
+            if derived.is_relative_to(root) or derived.is_relative_to(data):
+                raise ValueError("Default native login store must remain outside CAS and data")
         turns = value("max_turns", "CAS_RUNTIME_MAX_TURNS")
         budget = value("max_budget_usd", "CAS_RUNTIME_MAX_BUDGET_USD")
         if turns is not None:
@@ -63,7 +88,16 @@ class Configuration:
         if turns is not None and budget is not None:
             Limits(turns, str(budget), 120)
         return cls(
-            root, data, workspace, turns, None if budget is None else str(budget), host, port
+            root,
+            data,
+            workspace,
+            turns,
+            None if budget is None else str(budget),
+            host,
+            port,
+            provider,
+            auth_mode,
+            login_config,
         )
 
     def live_limits(

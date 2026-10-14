@@ -133,6 +133,8 @@ class LocalResearchCliTests(unittest.TestCase):
                 [
                     "--root",
                     directory,
+                    "--auth-mode",
+                    "api",
                     "scenarios",
                     "run",
                     "sdk.fundamentals",
@@ -166,6 +168,8 @@ class LocalResearchCliTests(unittest.TestCase):
                     [
                         "--root",
                         directory,
+                        "--auth-mode",
+                        "api",
                         "scenarios",
                         "run",
                         "sdk.fundamentals",

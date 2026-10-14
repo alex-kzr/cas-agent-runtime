@@ -5,7 +5,7 @@ import json
 import sys
 from dataclasses import asdict
 
-from agent_runtime.providers.claude.client import SYSTEM_ENV
+from agent_runtime.providers.claude.auth import auth_environment, require_auth
 from agent_runtime.providers.claude.supervision import OwnedProcess
 from agent_runtime.tasks.executor import NativeResult
 from agent_runtime.tasks.models import WorkerCleanupError, sdk_succeeded, validate_document
@@ -17,10 +17,7 @@ class SupervisedClaudeAdapter:
         self.environment = dict(environment)
 
     async def run(self, request, recorder):
-        if not request.live_authorized:
-            raise PermissionError("Live model execution requires explicit --allow-live")
-        if not self.environment.get("ANTHROPIC_API_KEY"):
-            raise ValueError("ANTHROPIC_API_KEY must be supplied externally for a live run")
+        require_auth(request, self.environment)
         directory = recorder.directory / "worker"
         directory.mkdir(exist_ok=False)
         values = asdict(request)
@@ -33,10 +30,9 @@ class SupervisedClaudeAdapter:
                 "directory": str(directory),
             }
         ).encode("utf-8")
-        environment = {
-            key: value for key, value in self.environment.items() if key.upper() in SYSTEM_ENV
-        }
-        environment["ANTHROPIC_API_KEY"] = self.environment["ANTHROPIC_API_KEY"]
+        environment = auth_environment(
+            request, self.environment, directory / "sdk-state", forbidden_roots=(recorder.data_dir,)
+        )
         owner = OwnedProcess()
         code = None
         failed = False
@@ -122,7 +118,7 @@ class SupervisedClaudeAdapter:
             validate_document("run", record)
             if record["run_id"] != recorder.run_id:
                 raise ValueError("Worker evidence identity mismatch")
-            for name in ("provider", "session_id", "sdk_outcome"):
+            for name in ("provider", "session_id", "sdk_outcome", "configuration"):
                 recorder.record[name] = record[name]
             cleanup = recorder.record["usage"]["application"]["cleanup"]
             recorder.record["usage"] = record["usage"]

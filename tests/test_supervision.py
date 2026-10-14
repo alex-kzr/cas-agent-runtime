@@ -190,6 +190,7 @@ class HandoffTests(unittest.IsolatedAsyncioTestCase):
                 root / "workspaces/one",
                 Limits(1, "0.10", 5),
                 live_authorized=True,
+                auth_mode="api",
                 scenario_id="sdk.fundamentals" if baseline else None,
             )
 

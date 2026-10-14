@@ -131,7 +131,12 @@ def write_catalog(data_dir, run=None, *, locked=False) -> None:
             **metadata,
             "prerequisites": ["offline Python environment"]
             if mode == "local"
-            else ["explicit live consent", "native API key", "bounded turn/budget/wall limits"],
+            else [
+                "explicit live consent",
+                "selected subscription/API profile",
+                "explicit native-login reuse consent or API key",
+                "bounded turn/budget/wall limits",
+            ],
             "execution_mode": mode,
             "evidence_status": "pending",
             "latest_run_id": None,

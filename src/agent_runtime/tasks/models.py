@@ -83,8 +83,18 @@ class ExecutionRequest:
     model: str | None = None
     live_authorized: bool = False
     agent_name: str = "text-only-v1"
+    auth_mode: Literal["subscription", "api"] = "subscription"
+    allow_existing_login: bool = False
+    login_config_dir: str | None = None
 
     def __post_init__(self) -> None:
+        if (
+            self.auth_mode not in {"subscription", "api"}
+            or type(self.allow_existing_login) is not bool
+        ):
+            raise ValueError("Unknown auth mode or invalid login-reuse consent")
+        if self.login_config_dir is not None and not isinstance(self.login_config_dir, str):
+            raise ValueError("Native login directory must be an explicit path string")
         if self.agent_name not in {"text-only-v1", "read-only-v1"}:
             raise ValueError("Unknown agent profile")
         if self.kind not in {"task", "scenario"}:

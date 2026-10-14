@@ -24,6 +24,7 @@ def main():
     if not raw or len(raw) > 1_000_000:
         return 2
     payload = json.loads(raw)
+    from agent_runtime.providers.claude.auth import require_auth
     from agent_runtime.providers.claude.client import ClaudeAdapter
     from agent_runtime.tasks.models import ExecutionRequest, Limits
     from agent_runtime.telemetry.recorder import Recorder, atomic_json
@@ -32,8 +33,7 @@ def main():
     values["limits"] = Limits(**values["limits"])
     values["workspace"] = Path(values["workspace"])
     request = ExecutionRequest(**values)
-    if not request.live_authorized or not os.environ.get("ANTHROPIC_API_KEY"):
-        return 2
+    require_auth(request, os.environ)
     directory = Path(payload["directory"])
     recorder = Recorder.__new__(Recorder)
     recorder.data_dir = directory.parent.parent.parent
@@ -42,7 +42,7 @@ def main():
     recorder.run_id = recorder.record["run_id"]
     recorder.task_id = recorder.record["task_id"]
     recorder.seq = payload["seq"]
-    recorder.secrets = (os.environ["ANTHROPIC_API_KEY"],)
+    recorder.secrets = (os.environ["ANTHROPIC_API_KEY"],) if request.auth_mode == "api" else ()
     result = None
     error = None
     try:

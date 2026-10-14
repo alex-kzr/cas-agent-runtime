@@ -45,6 +45,14 @@ def parser() -> argparse.ArgumentParser:
     )
     result.add_argument("--root", type=Path)
     result.add_argument("--data-dir", type=Path)
+    result.add_argument(
+        "--auth-mode", choices=["subscription", "api"], help="Default subscription; API is explicit"
+    )
+    result.add_argument(
+        "--native-config-dir",
+        dest="login_config_dir",
+        help="Existing native login store outside CAS; never copied",
+    )
     commands = result.add_subparsers(dest="command", required=True)
     commands.add_parser("doctor", help="Offline installation and repository diagnostics")
     agents = commands.add_parser("agents").add_subparsers(dest="action", required=True)
@@ -54,6 +62,11 @@ def parser() -> argparse.ArgumentParser:
     )
     task.add_argument("--file", type=Path, required=True)
     task.add_argument("--allow-live", action="store_true", help="Authorize this model invocation")
+    task.add_argument(
+        "--allow-existing-login",
+        action="store_true",
+        help="Authorize native subscription session reuse for this invocation",
+    )
     task.add_argument("--model")
     task.add_argument("--agent", choices=["text-only-v1", "read-only-v1"], default="text-only-v1")
     task.add_argument(
@@ -73,6 +86,7 @@ def parser() -> argparse.ArgumentParser:
     scenario_run = scenarios.add_parser("run")
     scenario_run.add_argument("scenario_id")
     scenario_run.add_argument("--allow-live", action="store_true")
+    scenario_run.add_argument("--allow-existing-login", action="store_true")
     scenario_run.add_argument(
         "--model", help="Explicit native model ID; required for live research"
     )
@@ -97,6 +111,8 @@ def main(argv=None) -> int:
             os.environ,
             {
                 "data_dir": args.data_dir,
+                "auth_mode": args.auth_mode,
+                "login_config_dir": args.login_config_dir,
                 "max_turns": getattr(args, "max_turns", None),
                 "max_budget_usd": getattr(args, "max_budget_usd", None),
             },
@@ -118,6 +134,12 @@ def main(argv=None) -> int:
             output(
                 {
                     "mode": "offline",
+                    "authentication": {
+                        "selected": cfg.auth_mode,
+                        "session_status": "not-checked",
+                        "existing_login_reuse": "requires --allow-existing-login",
+                        "api_fallback": "disabled",
+                    },
                     "dependencies": checks,
                     "configuration": cfg.public(),
                     "components": {
@@ -150,7 +172,11 @@ def main(argv=None) -> int:
         elif args.command == "task":
             if not args.allow_live:
                 raise PermissionError("Use --allow-live only after approving this model invocation")
-            if not os.environ.get("ANTHROPIC_API_KEY"):
+            if cfg.auth_mode == "subscription" and not args.allow_existing_login:
+                raise PermissionError(
+                    "Subscription mode requires separate --allow-existing-login consent"
+                )
+            if cfg.auth_mode == "api" and not os.environ.get("ANTHROPIC_API_KEY"):
                 raise ValueError("ANTHROPIC_API_KEY must be supplied externally")
             limits = cfg.live_limits(timeout_seconds=args.timeout_seconds)
             if args.file.stat().st_size > 256_000:
@@ -167,12 +193,15 @@ def main(argv=None) -> int:
                 model=args.model,
                 live_authorized=True,
                 agent_name=args.agent,
+                auth_mode=cfg.auth_mode,
+                allow_existing_login=args.allow_existing_login,
+                login_config_dir=cfg.login_config_dir,
             )
             run = asyncio.run(
                 Executor(
                     cfg.data_dir,
                     SupervisedClaudeAdapter(os.environ),
-                    secrets=[os.environ["ANTHROPIC_API_KEY"]],
+                    secrets=[os.environ["ANTHROPIC_API_KEY"]] if cfg.auth_mode == "api" else [],
                     workspace_root=cfg.workspace_root,
                 ).execute(request)
             )
@@ -212,7 +241,11 @@ def main(argv=None) -> int:
                 if live:
                     if not args.allow_live:
                         raise PermissionError("Live SDK baseline requires explicit --allow-live")
-                    if not os.environ.get("ANTHROPIC_API_KEY"):
+                    if cfg.auth_mode == "subscription" and not args.allow_existing_login:
+                        raise PermissionError(
+                            "Subscription mode requires separate --allow-existing-login consent"
+                        )
+                    if cfg.auth_mode == "api" and not os.environ.get("ANTHROPIC_API_KEY"):
                         raise ValueError("ANTHROPIC_API_KEY must be supplied externally")
                     if not args.model:
                         raise ValueError("Live SDK baseline requires explicit --model")
@@ -220,7 +253,7 @@ def main(argv=None) -> int:
 
                     limits = cfg.live_limits(timeout_seconds=args.timeout_seconds)
                     client = SupervisedClaudeAdapter(os.environ)
-                    secrets = [os.environ["ANTHROPIC_API_KEY"]]
+                    secrets = [os.environ["ANTHROPIC_API_KEY"]] if cfg.auth_mode == "api" else []
                 else:
                     limits = Limits(1, "0.01", 10)
                     client, secrets = LocalValidation(), []
@@ -232,6 +265,9 @@ def main(argv=None) -> int:
                     args.scenario_id,
                     model=args.model if live else None,
                     live_authorized=live,
+                    auth_mode=cfg.auth_mode,
+                    allow_existing_login=args.allow_existing_login,
+                    login_config_dir=cfg.login_config_dir,
                 )
                 run = asyncio.run(
                     Executor(
