@@ -53,3 +53,14 @@ existing Windows supervisor. Both native-startup and existing-login flags plus a
 reviewed composite source/executable hash are mandatory. No setup/default command
 runs it. Consult umbrella `docs/research/CONTEXT_PROBE_APPROVAL_SCOPE.md` before any
 new consent; it explains native profile/network risks beyond the CAS protocol boundary.
+
+## Subsequently authorized diagnostic result
+
+The separately approved probe was subsequently executed exactly once on 2026-10-14
+against source `6e18318`, with all 59 manifest entries verified. It returned observed:
+one initialize/one context request, zero user frames; pre-query accounting reported
+10 total tokens, zero memory files/tokens, MCP tools and agents. Forced Windows Job
+cleanup observed the owned tree empty. The umbrella report is
+`docs/research/CONTEXT_PROBE_RESULT_2026-10-14.md` (CAS-CTX-PROBE-001).
+This does not prove builtin unload, native file/wire isolation, causal control effects
+or zero billing. The one-shot approval is consumed; do not rerun on this authority.

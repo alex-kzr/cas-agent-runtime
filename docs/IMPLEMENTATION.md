@@ -24,3 +24,14 @@ whitelisted twice and unknown cleanup stays inconclusive. Native profile/content
 behavior is not proved by the fence; see the separate umbrella approval scope. Full
 offline suite: 106 tests in 12.579 seconds, lint/security/build pass. No probe/native
 auth/model was used for verification.
+
+## Subsequently authorized diagnostic execution
+
+One fixed no-query probe was authorized and executed once on 2026-10-14, using source
+`6e18318` and the verified 59-entry scope. Status observed, exit 0; one initialize and
+one context request, zero user frames; accounting before any user turn reported 10
+total tokens and zero memory/MCP/agent entries. Forced owned-tree cleanup was observed
+empty. Independent read-only review matched both output JSON and approved hashes.
+See umbrella `docs/research/CONTEXT_PROBE_RESULT_2026-10-14.md` and sanitized evidence.
+The frozen source was unchanged. Context isolation and billing remain unverified;
+approval is consumed and no repeat or inference is authorized by it.
