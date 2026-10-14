@@ -146,3 +146,88 @@ class ControlTests(unittest.TestCase):
         self.control = TaskControl(self.root, adapter_factory=ScriptedCoding)
         self.assertEqual(self.control.load(job["task_id"])["status"], "INTERRUPTED")
         self.assertEqual(ScriptedCoding.requests, [])
+
+    def test_restart_recovers_completed_canonical_status_without_replay(self):
+        job = self.control.create()
+        started = self.control.start(job["task_id"], allow_live=True, allow_existing_login=True)
+        self.wait()
+        stale = self.control.load(job["task_id"])
+        stale["status"] = "RUNNING"
+        self.control.save(stale)
+        self.control.close()
+        self.control = TaskControl(self.root, adapter_factory=ScriptedCoding)
+        recovered = self.control.load(job["task_id"])
+        self.assertEqual(recovered["status"], "COMPLETED")
+        self.assertEqual(recovered["recovery"]["reason"], "canonical-terminal")
+        self.assertEqual(len(ScriptedCoding.requests), 1)
+        self.assertEqual(recovered["run_id"], started["run_id"])
+
+    def test_consumed_claim_is_not_a_new_draft_after_restart(self):
+        from uuid import uuid4
+
+        job = self.control.create()
+        (self.control.directory / f"{job['task_id']}.started").write_text(str(uuid4()))
+        self.control.close()
+        self.control = TaskControl(self.root, adapter_factory=ScriptedCoding)
+        self.assertEqual(self.control.load(job["task_id"])["status"], "INTERRUPTED")
+        with self.assertRaises(ValueError):
+            self.control.start(job["task_id"], allow_live=True, allow_existing_login=True)
+        self.assertEqual(ScriptedCoding.requests, [])
+
+    def test_eligibility_is_read_only_and_explicitly_not_native_verified(self):
+        job = self.control.create()
+        self.control.start(job["task_id"], allow_live=True, allow_existing_login=True)
+        self.wait()
+        before = {
+            file.relative_to(self.root).as_posix(): file.read_bytes()
+            for file in self.root.rglob("*")
+            if file.is_file() and file.name != ".execution.lock"
+        }
+        status = self.control.list()[0]["continuation"]
+        self.assertTrue(status["eligible"])
+        self.assertFalse(status["native_history_verified"])
+        after = {
+            file.relative_to(self.root).as_posix(): file.read_bytes()
+            for file in self.root.rglob("*")
+            if file.is_file() and file.name != ".execution.lock"
+        }
+        self.assertEqual(before, after)
+
+    def test_unknown_cleanup_disables_continuation_with_reason(self):
+        job = self.control.create()
+        started = self.control.start(job["task_id"], allow_live=True, allow_existing_login=True)
+        self.wait()
+        path = self.root / "runs" / started["run_id"] / "run.json"
+        record = json.loads(path.read_text())
+        record["usage"]["application"]["cleanup"]["tree_empty"] = False
+        path.write_text(json.dumps(record))
+        status = self.control.list()[0]["continuation"]
+        self.assertFalse(status["eligible"])
+        self.assertEqual(status["code"], "cleanup-unconfirmed")
+
+    def test_corrupt_source_refuses_eligibility_without_breaking_list(self):
+        job = self.control.create()
+        self.control.start(job["task_id"], allow_live=True, allow_existing_login=True)
+        self.wait()
+        self.control.workspace(job).joinpath("calc.py").write_text("def add(")
+        status = self.control.list()[0]["continuation"]
+        self.assertFalse(status["eligible"])
+        self.assertEqual(status["code"], "missing-or-invalid-evidence")
+        self.assertEqual(self.control.create()["status"], "DRAFT")
+
+    def test_malformed_cleanup_and_foreign_task_identity_are_ineligible(self):
+        from uuid import uuid4
+
+        job = self.control.create()
+        started = self.control.start(job["task_id"], allow_live=True, allow_existing_login=True)
+        self.wait()
+        path = self.root / "runs" / started["run_id"] / "run.json"
+        record = json.loads(path.read_text())
+        for invalid in (True, {"tree_empty": "true"}, {"tree_empty": 1}):
+            record["usage"]["application"]["cleanup"] = invalid
+            path.write_text(json.dumps(record))
+            self.assertEqual(self.control.list()[0]["continuation"]["code"], "cleanup-unconfirmed")
+        record["usage"]["application"]["cleanup"] = {"tree_empty": True}
+        record["task_id"] = str(uuid4())
+        path.write_text(json.dumps(record))
+        self.assertEqual(self.control.list()[0]["continuation"]["code"], "identity-mismatch")

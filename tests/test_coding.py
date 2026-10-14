@@ -8,6 +8,41 @@ from agent_runtime.tasks.coding import CodingWorkspace
 
 
 class CodingTests(unittest.IsolatedAsyncioTestCase):
+    async def test_mcp_handlers_enforce_policy_even_without_permission_callback(self):
+        from unittest.mock import AsyncMock
+
+        from agent_runtime.tasks.coding import sdk_server
+
+        class Journal:
+            def event(self, *_):
+                pass
+
+        with patch("claude_agent_sdk.create_sdk_mcp_server", side_effect=lambda **values: values):
+            server = sdk_server(self.coding, Journal())
+        tools = {tool.name: tool.handler for tool in server["tools"]}
+        for name, arguments in [
+            ("read_file", {"path": "../secret"}),
+            ("write_file", {"path": "calc.py", "source": "import os"}),
+            ("write_file", {"path": "../calc.py", "source": "def add(a,b):\n return a+b\n"}),
+        ]:
+            rejected = await tools[name](arguments)
+            self.assertTrue(rejected["isError"])
+        with patch.object(self.coding, "test", new_callable=AsyncMock) as fixed_test:
+            rejected = await tools["run_tests"]({"command": "arbitrary-command"})
+            self.assertTrue(rejected["isError"])
+            fixed_test.assert_not_called()
+
+    async def test_snapshots_preserve_exact_source_bytes_and_hash(self):
+        import hashlib
+
+        self.coding.write("calc.py", "def add(a, b):\r\n    return a + b\r\n")
+        original = self.workspace.joinpath("calc.py").read_bytes()
+        await self.coding.test()
+        report = self.coding.capture()
+        self.assertEqual((self.root / "evidence/after.py").read_bytes(), original)
+        self.assertEqual(report["after_sha256"], hashlib.sha256(original).hexdigest())
+        self.assertNotIn(b"\r\r\n", (self.root / "evidence/changes.diff").read_bytes())
+
     async def asyncSetUp(self):
         self.temp = tempfile.TemporaryDirectory()
         self.addCleanup(self.temp.cleanup)

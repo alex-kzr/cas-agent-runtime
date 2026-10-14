@@ -4,16 +4,19 @@ from __future__ import annotations
 
 import json
 import os
+import re
 from collections.abc import Mapping
 from dataclasses import asdict, is_dataclass
 
 from claude_agent_sdk import (
     ClaudeAgentOptions,
     ClaudeSDKClient,
+    ConversationResetMessage,
     HookMatcher,
     PermissionResultAllow,
     PermissionResultDeny,
     ResultMessage,
+    SystemMessage,
 )
 
 from agent_runtime.providers.claude.auth import (
@@ -37,14 +40,65 @@ from agent_runtime.telemetry.metrics import ObservedUsage
 from agent_runtime.telemetry.recorder import Recorder
 
 
+def observe_session_identity(message, request, recorder):
+    """Main-session identity only; this does not verify native history durability."""
+    if getattr(message, "parent_tool_use_id", None):
+        return
+    if isinstance(message, ConversationResetMessage):
+        recorder.record["configuration"]["session_identity"] = "reset-observed"
+        recorder.event(
+            "session.reset", {"resume_requested": bool(request.resume_session_id)}, "sdk"
+        )
+        recorder.save()
+        raise ValueError("Native conversation reset during a single CAS task; no replay")
+    if isinstance(message, SystemMessage):
+        if message.subtype != "init" or message.data.get("parent_tool_use_id"):
+            return
+        session_id = message.data.get("session_id")
+    else:
+        session_id = getattr(message, "session_id", None)
+    if session_id is None and not isinstance(message, ResultMessage):
+        return
+    if not isinstance(session_id, str) or re.fullmatch(r"[A-Za-z0-9_-]{1,128}", session_id) is None:
+        recorder.record["configuration"]["session_identity"] = "invalid-main-id"
+        recorder.event("session.identity_rejected", {"reason": "invalid-main-id"}, "sdk")
+        recorder.save()
+        raise ValueError("Invalid main native session identity")
+    expected = request.resume_session_id or recorder.record["session_id"]
+    if expected is not None and expected != session_id:
+        recorder.record["configuration"]["session_identity"] = "mismatch"
+        recorder.event(
+            "session.identity_mismatch",
+            {
+                "expected_session_id": expected,
+                "observed_session_id": session_id,
+                "resume_requested": bool(request.resume_session_id),
+            },
+            "sdk",
+        )
+        recorder.save()
+        raise ValueError("Main native session identity changed; no fallback or replay")
+    recorder.record["session_id"] = session_id
+    recorder.record["configuration"]["session_identity"] = (
+        "matched-resume" if request.resume_session_id else "observed-main"
+    )
+    recorder.save()
+
+
 class ClaudeAdapter:
     def __init__(self, environment: Mapping[str, str]):
         self.environment = dict(environment)
 
     def options(self, request: ExecutionRequest, recorder: Recorder) -> ClaudeAgentOptions:
         from agent_runtime.tasks.coding import PROFILE, TOOLS, CodingWorkspace, sdk_server
-        coding = (CodingWorkspace(request.workspace, recorder.data_dir / 'runs' / recorder.run_id / 'coding')
-                  if request.agent_name == PROFILE else None)
+
+        coding = (
+            CodingWorkspace(
+                request.workspace, recorder.data_dir / "runs" / recorder.run_id / "coding"
+            )
+            if request.agent_name == PROFILE
+            else None
+        )
 
         def permitted(name, arguments):
             if coding is not None:
@@ -147,7 +201,7 @@ class ClaudeAdapter:
             plugins=[],
             extra_args={"disable-slash-commands": None},
             verbatim_prompts=True,
-            mcp_servers=({'cas_workspace': sdk_server(coding, recorder)} if coding else {}),
+            mcp_servers=({"cas_workspace": sdk_server(coding, recorder)} if coding else {}),
             resume=request.resume_session_id,
             strict_mcp_config=True,
             permission_mode="default",
@@ -222,10 +276,8 @@ class ClaudeAdapter:
                     {"message_type": type(message).__name__, "message": payload},
                     "sdk",
                 )
-                session_id = getattr(message, "session_id", None)
-                if session_id:
-                    recorder.record["session_id"] = session_id
-                    recorder.save()
+                if not isinstance(message, ResultMessage):
+                    observe_session_identity(message, request, recorder)
                 if isinstance(message, ResultMessage):
                     result = NativeResult(
                         message.result,
@@ -268,6 +320,7 @@ class ClaudeAdapter:
                     # observed outcome/cost evidence from a failed run summary.
                     recorder.record["sdk_outcome"] = result.outcome
                     recorder.record["usage"]["sdk"] = result.usage
+                    observe_session_identity(message, request, recorder)
                 # Worker-private snapshot retains observations even if native context
                 # shutdown later stalls and the parent must terminate the process tree.
                 recorder.save()

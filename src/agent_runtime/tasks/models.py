@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import json
+import re
 from dataclasses import dataclass
 from decimal import Decimal, InvalidOperation
 from enum import StrEnum
@@ -100,11 +101,17 @@ class ExecutionRequest:
         if self.login_config_dir is not None and not isinstance(self.login_config_dir, str):
             raise ValueError("Native login directory must be an explicit path string")
         from uuid import UUID
+
         for value in (self.run_id, self.resumes_run_id, self.task_id):
             if value is not None and str(UUID(value)) != value:
                 raise ValueError("Invalid run identity")
         if bool(self.resumes_run_id) != bool(self.resume_session_id):
             raise ValueError("Continuation requires both previous run and native session")
+        if self.resume_session_id is not None and (
+            not isinstance(self.resume_session_id, str)
+            or re.fullmatch(r"[A-Za-z0-9_-]{1,128}", self.resume_session_id) is None
+        ):
+            raise ValueError("Invalid explicit native session identity")
         if self.agent_name not in {"text-only-v1", "read-only-v1", "coding-fixture-v1"}:
             raise ValueError("Unknown agent profile")
         if self.kind not in {"task", "scenario"}:

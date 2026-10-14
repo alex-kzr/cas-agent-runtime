@@ -28,6 +28,12 @@ def identity(value):
     return value
 
 
+class ContinuationUnavailable(ValueError):
+    def __init__(self, code, message):
+        super().__init__(message)
+        self.code = code
+
+
 class TaskControl:
     def __init__(self, data_dir, *, adapter_factory=None):
         self.data_dir = Path(data_dir).resolve()
@@ -47,9 +53,7 @@ class TaskControl:
                 reconcile(self.data_dir, locked=True)
                 for path in self.directory.glob("*.json"):
                     job = self.load(path.stem)
-                    if job["status"] in {"STARTING", "RUNNING", "STOPPING"}:
-                        job["status"] = "INTERRUPTED"
-                        self.save(job)
+                    self.recover_job(job)
         except BaseException:
             self.owner.__exit__()
             raise
@@ -75,7 +79,7 @@ class TaskControl:
         }
         if (
             not isinstance(job, dict)
-            or set(job) - required - {"error"}
+            or set(job) - required - {"error", "recovery"}
             or not required.issubset(job)
             or job["task_id"] != task_id
             or job["schema_version"] != 1
@@ -107,12 +111,74 @@ class TaskControl:
     def save(self, job):
         atomic_json(self.directory / f"{job['task_id']}.json", job)
 
+    def recover_job(self, job):
+        claim = self.directory / f"{job['task_id']}.started"
+        if job["status"] == "DRAFT" and claim.exists():
+            if not claim.is_symlink() and claim.stat().st_size <= 128:
+                try:
+                    job["run_id"] = identity(claim.read_text(encoding="utf-8"))
+                except ValueError:
+                    pass
+        elif job["status"] not in {"STARTING", "RUNNING", "STOPPING"}:
+            return
+        previous_status = job["status"]
+        recovered_status = "INTERRUPTED"
+        reason = "writer-lost"
+        if job["run_id"] is not None:
+            path = self.data_dir / "runs" / identity(job["run_id"]) / "run.json"
+            try:
+                if path.stat().st_size > 1_000_000:
+                    raise ValueError("Unsafe canonical run")
+                record = json.loads(path.read_text(encoding="utf-8"))
+                validate_document("run", record)
+                if record["run_id"] != job["run_id"] or record["task_id"] != job["task_id"]:
+                    raise ValueError("Canonical identity differs")
+                if record["status"] in TERMINAL:
+                    recovered_status = record["status"]
+                    reason = (
+                        "writer-lost"
+                        if (record["error"] or {}).get("code") == "process_lost"
+                        else "canonical-terminal"
+                    )
+            except (ValueError, OSError):
+                pass
+        job["status"] = recovered_status
+        job["recovery"] = {
+            "reason": reason,
+            "previous_status": previous_status,
+            "automatic_restart": False,
+        }
+        self.save(job)
+
+    def records(self):
+        paths = list(islice(self.directory.glob("*.json"), 101))
+        if len(paths) > 100:
+            raise ValueError("Console task capacity exceeded; choose a fresh data directory")
+        return [self.load(path.stem) for path in sorted(paths)]
+
     def list(self):
         with self.lock:
-            paths = list(islice(self.directory.glob("*.json"), 101))
-            if len(paths) > 100:
-                raise ValueError("Console task capacity exceeded; choose a fresh data directory")
-            return [self.load(path.stem) for path in sorted(paths)]
+            records = self.records()
+            values = []
+            for job in records:
+                status = {
+                    "eligible": False,
+                    "code": "not-terminal",
+                    "reason": "No eligible terminal run yet.",
+                    "native_history_verified": False,
+                }
+                if job["run_id"] and job["status"] in TERMINAL:
+                    try:
+                        self.previous(job["run_id"], jobs=records)
+                        status.update(
+                            eligible=True,
+                            code="local-checks-passed",
+                            reason="Local checks passed; native history availability is unverified.",
+                        )
+                    except ContinuationUnavailable as error:
+                        status.update(code=error.code, reason=str(error))
+                values.append(dict(job, continuation=status))
+            return values
 
     def create(self, *, resumes_run_id=None):
         with self.lock:
@@ -153,7 +219,22 @@ class TaskControl:
             raise ValueError("Linked workspace root rejected")
         return workspace
 
-    def previous(self, run_id):
+    def previous(self, run_id, *, jobs=None):
+        try:
+            if self.active_id is not None:
+                raise ContinuationUnavailable(
+                    "active-execution", "An execution is active; wait for cleanup."
+                )
+            return self._previous(run_id, jobs=jobs)
+        except ContinuationUnavailable:
+            raise
+        except (ValueError, OSError, KeyError, TypeError, SyntaxError) as error:
+            raise ContinuationUnavailable(
+                "missing-or-invalid-evidence",
+                "Saved run/session evidence is unavailable or invalid; no automatic replay.",
+            ) from error
+
+    def _previous(self, run_id, *, jobs=None):
         run_id = identity(run_id)
         path = self.data_dir / "runs" / run_id / "run.json"
         if path.stat().st_size > 1_000_000:
@@ -168,13 +249,23 @@ class TaskControl:
             or not isinstance(previous["session_id"], str)
             or not 1 <= len(previous["session_id"]) <= 128
         ):
-            raise ValueError("Previous run has no eligible native session")
+            raise ContinuationUnavailable(
+                "missing-session", "Previous run has no eligible saved native session."
+            )
         cleanup = (previous["usage"]["application"] or {}).get("cleanup", {})
-        if not cleanup.get("tree_empty"):
-            raise ValueError("Previous owned-tree cleanup is not confirmed")
-        jobs = [job for job in self.list() if job["run_id"] == run_id]
+        if not isinstance(cleanup, dict) or cleanup.get("tree_empty") is not True:
+            raise ContinuationUnavailable(
+                "cleanup-unconfirmed", "Previous owned-tree cleanup is unconfirmed."
+            )
+        jobs = [
+            job for job in (self.records() if jobs is None else jobs) if job["run_id"] == run_id
+        ]
         if len(jobs) != 1:
             raise ValueError("Previous run is not owned by console control")
+        if previous["task_id"] != jobs[0]["task_id"]:
+            raise ContinuationUnavailable(
+                "identity-mismatch", "Saved task/run identity differs from its controller."
+            )
         workspace_id = jobs[0]["workspace_id"]
         workspace = self.workspace(jobs[0])
         if Path(previous["workspace"]) != workspace:
@@ -183,9 +274,10 @@ class TaskControl:
         if report_path.stat().st_size > 8192:
             raise ValueError("Unsafe previous coding evidence")
         report = json.loads(report_path.read_text(encoding="utf-8"))
-        coding = CodingWorkspace(workspace, path.parent / "continuation-check")
-        if digest(coding.read("calc.py")) != report["after_sha256"]:
-            raise ValueError("Workspace changed after previous run; no replay")
+        if digest(CodingWorkspace.inspect(workspace)) != report["after_sha256"]:
+            raise ContinuationUnavailable(
+                "workspace-changed", "Workspace changed after the previous run; no replay."
+            )
         return previous, workspace_id
 
     def start(self, task_id, *, allow_live=False, allow_existing_login=False):

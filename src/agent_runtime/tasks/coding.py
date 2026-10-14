@@ -26,6 +26,13 @@ def digest(source):
 
 
 class CodingWorkspace:
+    @classmethod
+    def inspect(cls, workspace):
+        """Validate/read existing source without creating evidence directories."""
+        instance = cls.__new__(cls)
+        instance.workspace = Path(workspace)
+        return instance.read("calc.py")
+
     @staticmethod
     def create(workspace):
         workspace.mkdir(parents=True, exist_ok=False)
@@ -59,7 +66,7 @@ class CodingWorkspace:
     def read(self, path):
         if path != "calc.py":
             raise ValueError("Only calc.py is approved")
-        source = self.check().read_text(encoding="utf-8")
+        source = self.check().read_bytes().decode("utf-8")
         validate_source(source)
         return source
 
@@ -69,7 +76,7 @@ class CodingWorkspace:
         if path != "calc.py":
             raise ValueError("Only calc.py is approved")
         validate_source(source)
-        self.check().write_text(source, encoding="utf-8", newline="\n")
+        self.check().write_bytes(source.encode("utf-8"))
         return {"sha256": digest(source)}
 
     async def test(self):
@@ -137,8 +144,8 @@ class CodingWorkspace:
 
     def capture(self):
         after = self.read("calc.py")
-        (self.directory / "before.py").write_text(self.before, encoding="utf-8")
-        (self.directory / "after.py").write_text(after, encoding="utf-8")
+        (self.directory / "before.py").write_bytes(self.before.encode("utf-8"))
+        (self.directory / "after.py").write_bytes(after.encode("utf-8"))
         diff = "".join(
             difflib.unified_diff(
                 self.before.splitlines(True),
@@ -147,7 +154,7 @@ class CodingWorkspace:
                 tofile="after/calc.py",
             )
         )
-        (self.directory / "changes.diff").write_text(diff, encoding="utf-8")
+        (self.directory / "changes.diff").write_bytes(diff.encode("utf-8"))
         test_path = self.directory / "tests.json"
         if self.latest is None and test_path.is_file() and test_path.stat().st_size <= 8192:
             self.latest = json.loads(test_path.read_text(encoding="utf-8"))
@@ -182,6 +189,15 @@ def sdk_server(coding, recorder):
         )
         recorder.event("tool.request", {"tool_name": name}, "hook")
         try:
+            expected = (
+                {"path", "source"}
+                if name.endswith("write_file")
+                else {"path"}
+                if name.endswith("read_file")
+                else set()
+            )
+            if not isinstance(arguments, dict) or set(arguments) != expected:
+                raise ValueError("Unexpected fixture tool arguments")
             if name.endswith("read_file"):
                 value = coding.read(arguments["path"])
             elif name.endswith("write_file"):
