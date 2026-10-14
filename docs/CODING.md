@@ -35,3 +35,7 @@ uv build --offline
 
 These verify application behavior only. No Claude/auth/model call is needed for tests.
 Context isolation stays unverified; future native coding E2E requires separate approval.
+
+## Subsequent one-shot native positive
+
+CAS-CODING-LIVE-001 subsequently verified the fixed coding path through production UI once, using unchanged source `133bfbf`. Read/write/tests ran once each, three exact-source checks passed, native outcome succeeded and forced cleanup observed an empty tree. SDK estimate is not billing evidence. Native resume, denied paths and broad context isolation remain pending. Snapshot export uses CRLF while tested source uses LF; raw-byte equality is not claimed. See umbrella docs/research/CODING_E2E_RESULT_2026-10-14.md; approval is consumed.
