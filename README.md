@@ -26,10 +26,10 @@ There is no selectable fake task provider. Unit tests explicitly inject test dou
 
 Live tasks require `task run --file task.md --allow-live --max-turns N --max-budget-usd B`,
 positive wall timeout and explicit auth-profile prerequisites. Do not run this as a setup check.
-No live model has been called. Default `text-only-v1` disables every tool. Optional `--agent read-only-v1 --workspace
+One explicitly authorized subscription text baseline completed with two passing assertions; see umbrella docs/research/SUBSCRIPTION_BASELINE_2026-10-14.md. Further live calls need new authorization. Default `text-only-v1` disables every tool. Optional `--agent read-only-v1 --workspace
 <directory-under-CAS-workspace-root>` permits only bounded Read, with path/secret-file
-policy and explicit deny on filesystem errors. Both profiles disable MCP/skills/plugins
-and accept nonempty text only; native tool enforcement remains unverified.
+policy and explicit deny on filesystem errors. Both profiles request empty MCP/skills/plugins lists
+and accept nonempty text only. Native init still advertised builtin skills/plugins and a memory path in the live baseline; context isolation and native tool enforcement remain unverified.
 Timeouts/interrupts are INTERRUPTED; `runs recover` marks abandoned records without retry.
 Resume, automatic retries, scheduler and production isolation are not implemented.
 
@@ -64,4 +64,4 @@ Current auth policy: **subscription by default**, with separate per-invocation
 `--allow-existing-login` and `--allow-live` consent. Explicit `--auth-mode api` retains
 external-key execution with isolated state. No fallback between profiles, login, token
 copy or persistent reuse grant is automatic. Doctor reports selected mode without
-opening the native store. Native status/model behavior remains live-unverified.
+opening the native store. One authorized subscription baseline verified native status and a text result for its recorded versions/model; broader native behavior and context isolation remain unverified.
