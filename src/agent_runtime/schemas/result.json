@@ -1,0 +1,159 @@
+{
+  "type": "object",
+  "properties": {
+    "schema_version": {
+      "const": 1
+    },
+    "run_id": {
+      "type": "string",
+      "format": "uuid"
+    },
+    "summary": {
+      "type": [
+        "string",
+        "null"
+      ]
+    },
+    "sdk_outcome": {
+      "anyOf": [
+        {
+          "type": "object",
+          "properties": {
+            "subtype": {
+              "type": [
+                "string",
+                "null"
+              ]
+            },
+            "is_error": {
+              "type": "boolean"
+            },
+            "terminal_reason": {
+              "type": [
+                "string",
+                "null"
+              ]
+            }
+          },
+          "required": [
+            "subtype",
+            "is_error",
+            "terminal_reason"
+          ],
+          "additionalProperties": true
+        },
+        {
+          "type": "null"
+        }
+      ]
+    },
+    "validation": {
+      "type": "object",
+      "properties": {
+        "status": {
+          "enum": [
+            "pending",
+            "passed",
+            "failed",
+            "error"
+          ]
+        },
+        "validator_version": {
+          "type": "string"
+        },
+        "checks": {
+          "type": "array",
+          "items": {
+            "type": "object"
+          }
+        }
+      },
+      "required": [
+        "status",
+        "validator_version",
+        "checks"
+      ],
+      "additionalProperties": true
+    },
+    "artifact_ids": {
+      "type": "array",
+      "items": {
+        "type": "string",
+        "format": "uuid"
+      }
+    },
+    "usage": {
+      "type": "object",
+      "properties": {
+        "sdk": {
+          "type": [
+            "object",
+            "null"
+          ]
+        },
+        "application": {
+          "type": [
+            "object",
+            "null"
+          ]
+        }
+      },
+      "required": [
+        "sdk",
+        "application"
+      ],
+      "additionalProperties": true
+    },
+    "error": {
+      "anyOf": [
+        {
+          "type": "object",
+          "properties": {
+            "category": {
+              "type": "string"
+            },
+            "code": {
+              "type": "string"
+            },
+            "message": {
+              "type": "string"
+            },
+            "retryable": {
+              "type": "boolean"
+            },
+            "evidence_refs": {
+              "type": "array",
+              "items": {
+                "type": "string"
+              }
+            }
+          },
+          "required": [
+            "category",
+            "code",
+            "message",
+            "retryable",
+            "evidence_refs"
+          ],
+          "additionalProperties": true
+        },
+        {
+          "type": "null"
+        }
+      ]
+    }
+  },
+  "required": [
+    "schema_version",
+    "run_id",
+    "summary",
+    "sdk_outcome",
+    "validation",
+    "artifact_ids",
+    "usage",
+    "error"
+  ],
+  "additionalProperties": true,
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://cas.invalid/contracts/v1/result.schema.json"
+}

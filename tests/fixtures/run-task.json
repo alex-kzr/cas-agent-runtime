@@ -1,0 +1,47 @@
+{
+  "schema_version": 1,
+  "run_id": "00000000-0000-4000-8000-000000000001",
+  "kind": "task",
+  "task_id": "00000000-0000-4000-8000-000000000002",
+  "scenario_id": null,
+  "status": "CREATED",
+  "created_at": "2026-10-14T00:00:00Z",
+  "updated_at": "2026-10-14T00:00:00Z",
+  "started_at": null,
+  "ended_at": null,
+  "provider": {
+    "name": "claude",
+    "sdk_package": "claude-agent-sdk",
+    "sdk_version": "0.2.165",
+    "cli_version": null,
+    "requested_model": null,
+    "resolved_model": null,
+    "os": "fixture",
+    "python": "3.12"
+  },
+  "instructions_ref": "tasks/00000000-0000-4000-8000-000000000002/task.json",
+  "configuration": {},
+  "workspace": "fixture",
+  "limits": {
+    "max_turns": 2,
+    "max_budget_usd": "0.10",
+    "timeout_seconds": 5
+  },
+  "session_id": null,
+  "resumes_run_id": null,
+  "retry_of_run_id": null,
+  "validation": {
+    "status": "pending",
+    "validator_version": "1",
+    "checks": []
+  },
+  "sdk_outcome": null,
+  "result_ref": null,
+  "artifacts_ref": null,
+  "error": null,
+  "evidence_status": "partial",
+  "usage": {
+    "sdk": null,
+    "application": null
+  }
+}

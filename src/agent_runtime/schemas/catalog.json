@@ -1,0 +1,131 @@
+{
+  "type": "object",
+  "properties": {
+    "schema_version": {
+      "const": 1
+    },
+    "generated_at": {
+      "type": "string",
+      "format": "date-time"
+    },
+    "catalog_version": {
+      "type": "string"
+    },
+    "producer": {
+      "type": "object",
+      "properties": {
+        "runtime_version": {
+          "type": "string"
+        },
+        "contract_version": {
+          "type": "string"
+        }
+      },
+      "required": [
+        "runtime_version",
+        "contract_version"
+      ],
+      "additionalProperties": true
+    },
+    "scenarios": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "properties": {
+          "scenario_id": {
+            "type": "string"
+          },
+          "scenario_version": {
+            "type": "string"
+          },
+          "family_id": {
+            "type": "string"
+          },
+          "group": {
+            "type": "string"
+          },
+          "title": {
+            "type": "string"
+          },
+          "prerequisites": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          },
+          "execution_mode": {
+            "enum": [
+              "local",
+              "live",
+              "mixed"
+            ]
+          },
+          "evidence_status": {
+            "enum": [
+              "pending",
+              "pass",
+              "fail",
+              "error",
+              "blocked",
+              "skipped"
+            ]
+          },
+          "latest_run_id": {
+            "anyOf": [
+              {
+                "type": "string",
+                "format": "uuid"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "evidence_refs": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          },
+          "tested_context": {
+            "type": [
+              "object",
+              "null"
+            ]
+          },
+          "blocked_reason": {
+            "type": [
+              "string",
+              "null"
+            ]
+          }
+        },
+        "required": [
+          "scenario_id",
+          "scenario_version",
+          "family_id",
+          "group",
+          "title",
+          "prerequisites",
+          "execution_mode",
+          "evidence_status",
+          "latest_run_id",
+          "evidence_refs",
+          "tested_context",
+          "blocked_reason"
+        ],
+        "additionalProperties": true
+      }
+    }
+  },
+  "required": [
+    "schema_version",
+    "generated_at",
+    "catalog_version",
+    "producer",
+    "scenarios"
+  ],
+  "additionalProperties": true,
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://cas.invalid/contracts/v1/catalog.schema.json"
+}
