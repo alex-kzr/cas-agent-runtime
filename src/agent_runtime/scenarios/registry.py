@@ -10,6 +10,12 @@ from agent_runtime.tasks.models import validate_document
 from agent_runtime.telemetry.recorder import RunLock, atomic_json, now, redact
 
 SCENARIOS = {
+    "sdk.fundamentals": {
+        "title": "Reply with the exact text CAS_SDK_BASELINE_OK and nothing else.",
+        "group": "fundamentals",
+        "family_id": "FND-01",
+        "execution_mode": "live",
+    },
     "platform.contracts": {
         "title": "Validate run contract and reject unknown major",
         "group": "platform",
@@ -90,12 +96,15 @@ def write_catalog(data_dir, run=None, *, locked=False) -> None:
         except (ValueError, OSError):
             pass
     for scenario_id, metadata in SCENARIOS.items():
+        mode = metadata.get("execution_mode", "local")
         entry = {
             "scenario_id": scenario_id,
             "scenario_version": "1",
             **metadata,
-            "prerequisites": ["offline Python environment"],
-            "execution_mode": "local",
+            "prerequisites": ["offline Python environment"]
+            if mode == "local"
+            else ["explicit live consent", "native API key", "bounded turn/budget/wall limits"],
+            "execution_mode": mode,
             "evidence_status": "pending",
             "latest_run_id": None,
             "evidence_refs": [],
@@ -121,7 +130,11 @@ def write_catalog(data_dir, run=None, *, locked=False) -> None:
                 entry,
                 evidence_status=status,
                 latest_run_id=run["run_id"],
-                tested_context={"mode": "offline", "os": run["provider"]["os"]},
+                tested_context={
+                    "mode": "offline" if mode == "local" else "live",
+                    "os": run["provider"]["os"],
+                    "sdk_version": run["provider"]["sdk_version"],
+                },
                 evidence_refs=[evidence_ref],
             )
         entries.append(entry)

@@ -70,7 +70,12 @@ def parser() -> argparse.ArgumentParser:
     runs.add_parser("inspect").add_argument("run_id")
     scenarios = commands.add_parser("scenarios").add_subparsers(dest="action", required=True)
     scenarios.add_parser("list")
-    scenarios.add_parser("run").add_argument("scenario_id")
+    scenario_run = scenarios.add_parser("run")
+    scenario_run.add_argument("scenario_id")
+    scenario_run.add_argument("--allow-live", action="store_true")
+    scenario_run.add_argument("--max-turns", type=int)
+    scenario_run.add_argument("--max-budget-usd")
+    scenario_run.add_argument("--timeout-seconds", type=int, default=30)
     commands.add_parser("report").add_argument("run_id")
     commands.add_parser("console", help="Launch independently installed read-only console")
     return result
@@ -189,22 +194,42 @@ def main(argv=None) -> int:
             from agent_runtime.scenarios.registry import SCENARIOS, LocalValidation, write_catalog
 
             if args.action == "list":
-                output({"mode": "offline platform checks only", "scenarios": SCENARIOS})
+                output(
+                    {
+                        "mode": "local checks plus explicitly gated live baseline",
+                        "scenarios": SCENARIOS,
+                    }
+                )
             else:
                 if args.scenario_id not in SCENARIOS:
                     raise ValueError("Unknown/unimplemented scenario; use scenarios list")
                 from agent_runtime.tasks.executor import Executor
 
+                live = SCENARIOS[args.scenario_id].get("execution_mode") == "live"
+                if live:
+                    if not args.allow_live:
+                        raise PermissionError("Live SDK baseline requires explicit --allow-live")
+                    if not os.environ.get("ANTHROPIC_API_KEY"):
+                        raise ValueError("ANTHROPIC_API_KEY must be supplied externally")
+                    from agent_runtime.providers.claude.client import ClaudeAdapter
+
+                    limits = cfg.live_limits(timeout_seconds=args.timeout_seconds)
+                    client = ClaudeAdapter(os.environ)
+                    secrets = [os.environ["ANTHROPIC_API_KEY"]]
+                else:
+                    limits = Limits(1, "0.01", 10)
+                    client, secrets = LocalValidation(), []
                 request = ExecutionRequest(
                     "scenario",
                     SCENARIOS[args.scenario_id]["title"],
                     cfg.workspace_root / str(uuid4()),
-                    Limits(1, "0.01", 10),
+                    limits,
                     args.scenario_id,
+                    live_authorized=live,
                 )
                 run = asyncio.run(
                     Executor(
-                        cfg.data_dir, LocalValidation(), workspace_root=cfg.workspace_root
+                        cfg.data_dir, client, secrets=secrets, workspace_root=cfg.workspace_root
                     ).execute(request)
                 )
                 write_catalog(cfg.data_dir, run)

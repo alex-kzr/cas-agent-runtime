@@ -24,6 +24,18 @@ class State(StrEnum):
 
 
 TERMINAL = {State.COMPLETED, State.FAILED, State.CANCELLED, State.INTERRUPTED}
+
+
+def sdk_succeeded(outcome: dict[str, Any] | None) -> bool:
+    """Pinned SDK reports completed; None is documented compatibility with older CLI."""
+    return bool(
+        outcome
+        and outcome.get("subtype") == "success"
+        and outcome.get("is_error") is False
+        and outcome.get("terminal_reason") in (None, "completed")
+    )
+
+
 TRANSITIONS = {
     State.CREATED: {State.VALIDATING, State.CANCELLED, State.INTERRUPTED},
     State.VALIDATING: {State.RUNNING, State.FAILED, State.CANCELLED, State.INTERRUPTED},
@@ -123,12 +135,7 @@ def validate_document(name: str, document: dict[str, Any]) -> None:
                 and document["configuration"].get("execution_mode") == "offline"
                 and outcome is None
             )
-            if not local and (
-                not outcome
-                or outcome.get("subtype") != "success"
-                or outcome.get("is_error")
-                or outcome.get("terminal_reason")
-            ):
+            if not local and not sdk_succeeded(outcome):
                 raise ValueError("COMPLETED requires a successful native outcome")
             if document["validation"]["status"] != "passed":
                 raise ValueError("COMPLETED requires passed validation")

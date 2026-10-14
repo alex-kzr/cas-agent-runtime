@@ -10,7 +10,7 @@ from pathlib import Path
 from typing import Any
 from uuid import uuid4
 
-from agent_runtime.tasks.models import ExecutionRequest, State, validate_document
+from agent_runtime.tasks.models import ExecutionRequest, State, sdk_succeeded, validate_document
 from agent_runtime.telemetry.recorder import Recorder, RunLock, atomic_json, reconcile
 
 
@@ -22,6 +22,7 @@ class NativeResult:
     usage: dict[str, Any] | None
     source: str = "sdk"
     checks: list[dict[str, Any]] | None = None
+    application_usage: dict[str, Any] | None = None
 
 
 class Executor:
@@ -61,6 +62,7 @@ class Executor:
                 recorder.record["session_id"] = native.session_id
                 recorder.record["sdk_outcome"] = native.outcome
                 recorder.record["usage"]["sdk"] = native.usage
+                recorder.record["usage"]["application"] = native.application_usage
                 summary = recorder.clean(native.text)
                 passed = isinstance(summary, str) and bool(summary.strip())
                 recorder.record["validation"] = {
@@ -74,12 +76,7 @@ class Executor:
                     and request.kind == "scenario"
                     and native.outcome is None
                     and recorder.record["provider"]["name"] == "local-validation"
-                ) or (
-                    native.outcome is not None
-                    and native.outcome.get("subtype") == "success"
-                    and native.outcome.get("is_error") is False
-                    and native.outcome.get("terminal_reason") is None
-                )
+                ) or sdk_succeeded(native.outcome)
                 assertions_passed = not native.checks or all(
                     check.get("outcome") == "pass" for check in native.checks
                 )
@@ -160,7 +157,8 @@ class Executor:
                     stage, type(error).__name__, recorder.clean(str(error))
                 )
             recorder.record["usage"]["application"] = {
-                "duration_ms": round((time.monotonic() - started) * 1000)
+                **(recorder.record["usage"]["application"] or {}),
+                "duration_ms": round((time.monotonic() - started) * 1000),
             }
             if recorder.record["error"]:
                 recorder.event("error", recorder.record["error"])

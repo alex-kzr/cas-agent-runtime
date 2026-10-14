@@ -3,12 +3,159 @@ import unittest
 from pathlib import Path
 from unittest.mock import patch
 
+from claude_agent_sdk import AssistantMessage, ResultMessage
+
 from agent_runtime.providers.claude.client import ClaudeAdapter
+from agent_runtime.tasks.executor import Executor
 from agent_runtime.tasks.models import ExecutionRequest, Limits
 from agent_runtime.telemetry.recorder import Recorder
 
 
 class AdapterTests(unittest.IsolatedAsyncioTestCase):
+    async def test_documented_completed_reason_passes_baseline_and_preserves_native_value(self):
+        class CompletedStream:
+            async def __aenter__(self):
+                return self
+
+            async def __aexit__(self, *args):
+                return False
+
+            async def query(self, prompt):
+                pass
+
+            async def receive_response(self):
+                yield ResultMessage(
+                    subtype="success",
+                    duration_ms=1,
+                    duration_api_ms=1,
+                    is_error=False,
+                    num_turns=1,
+                    session_id="fixture-session",
+                    result="CAS_SDK_BASELINE_OK",
+                    terminal_reason="completed",
+                )
+
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            request = ExecutionRequest(
+                "scenario",
+                "fixture",
+                root / "workspaces/one",
+                Limits(2, "0.1", 5),
+                scenario_id="sdk.fundamentals",
+                live_authorized=True,
+            )
+            with patch(
+                "agent_runtime.providers.claude.client.ClaudeSDKClient",
+                return_value=CompletedStream(),
+            ):
+                run = await Executor(
+                    root, ClaudeAdapter({"ANTHROPIC_API_KEY": "synthetic-not-real"})
+                ).execute(request)
+            self.assertEqual(run["status"], "COMPLETED")
+            self.assertEqual(run["sdk_outcome"]["terminal_reason"], "completed")
+            import json
+
+            assertions = json.loads((root / "runs" / run["run_id"] / "assertions.json").read_text())
+            self.assertEqual(assertions["outcome"], "pass")
+
+    async def test_baseline_marker_alone_cannot_pass_a_native_failure(self):
+        class MarkerStream:
+            async def __aenter__(self):
+                return self
+
+            async def __aexit__(self, *args):
+                return False
+
+            async def query(self, prompt):
+                pass
+
+            async def receive_response(self):
+                yield ResultMessage(
+                    subtype="error_during_execution",
+                    duration_ms=1,
+                    duration_api_ms=1,
+                    is_error=True,
+                    num_turns=1,
+                    session_id="fixture-session",
+                    result="CAS_SDK_BASELINE_OK",
+                    terminal_reason="api_error",
+                )
+
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            request = ExecutionRequest(
+                "scenario",
+                "fixture",
+                root / "workspaces/one",
+                Limits(2, "0.1", 5),
+                scenario_id="sdk.fundamentals",
+                live_authorized=True,
+            )
+            with patch(
+                "agent_runtime.providers.claude.client.ClaudeSDKClient", return_value=MarkerStream()
+            ):
+                run = await Executor(
+                    root, ClaudeAdapter({"ANTHROPIC_API_KEY": "synthetic-not-real"})
+                ).execute(request)
+            self.assertEqual(run["status"], "FAILED")
+            import json
+
+            assertions = json.loads((root / "runs" / run["run_id"] / "assertions.json").read_text())
+            self.assertEqual(assertions["outcome"], "fail")
+
+    async def test_partial_usage_and_native_error_result_survive_stream_exception(self):
+        class FailedStream:
+            async def __aenter__(self):
+                return self
+
+            async def __aexit__(self, *args):
+                return False
+
+            async def query(self, prompt):
+                pass
+
+            async def receive_response(self):
+                yield AssistantMessage(
+                    content=[],
+                    model="fixture",
+                    message_id="native-fixture-1",
+                    usage={"input_tokens": 4},
+                )
+                yield ResultMessage(
+                    subtype="error_during_execution",
+                    duration_ms=1,
+                    duration_api_ms=1,
+                    is_error=True,
+                    num_turns=1,
+                    session_id="fixture-session",
+                    total_cost_usd=0.123,
+                    terminal_reason="api_error",
+                )
+                raise RuntimeError("synthetic stream failure")
+
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            request = ExecutionRequest(
+                "task",
+                "fixture",
+                root / "workspaces/one",
+                Limits(2, "0.1", 5),
+                live_authorized=True,
+            )
+            with patch(
+                "agent_runtime.providers.claude.client.ClaudeSDKClient", return_value=FailedStream()
+            ):
+                run = await Executor(
+                    root, ClaudeAdapter({"ANTHROPIC_API_KEY": "synthetic-not-real"})
+                ).execute(request)
+            self.assertEqual(run["status"], "FAILED")
+            self.assertEqual(
+                run["usage"]["application"]["observed_main_loop_tokens"]["input_tokens"], 4
+            )
+            self.assertEqual(run["usage"]["sdk"]["total_cost_usd"], 0.123)
+            self.assertTrue(run["sdk_outcome"]["is_error"])
+
     def request(self, root, authorized=False):
         return ExecutionRequest(
             "task", "fixture", root / "workspace", Limits(2, "0.1", 5), live_authorized=authorized

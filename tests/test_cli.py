@@ -34,6 +34,17 @@ class CliTests(unittest.TestCase):
         self.assertIn("allow-live", output["message"])
         self.assertFalse((self.root / "data").exists())
 
+    def test_live_baseline_case_is_gated_and_does_not_construct_client(self):
+        with patch("agent_runtime.providers.claude.client.ClaudeSDKClient") as client:
+            code, result = self.call("scenarios", "run", "sdk.fundamentals")
+            self.assertEqual(code, 2)
+            self.assertIn("allow-live", result["message"])
+            with patch.dict("os.environ", {}, clear=True):
+                code, _ = self.call("scenarios", "run", "sdk.fundamentals", "--allow-live")
+                self.assertEqual(code, 2)
+            client.assert_not_called()
+        self.assertFalse((self.root / "data").exists())
+
     def test_actual_offline_scenario_and_inspection(self):
         code, run = self.call("scenarios", "run", "platform.contracts")
         self.assertEqual(code, 0)

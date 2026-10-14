@@ -36,3 +36,11 @@ Resume, automatic retries, scheduler and production isolation are not implemente
 Console launch requires the independent agent-console environment. Canonical contracts,
 security requirements and research scope live in umbrella docs, with byte-identical
 schema snapshots packaged here. See [baseline evidence](docs/BASELINE.md).
+
+## Prepared native baseline (requires separate authorization)
+
+After explicit spend approval and an externally supplied native key, the prepared
+command is `cas-cli scenarios run sdk.fundamentals --allow-live --max-turns 1
+--max-budget-usd 0.10 --timeout-seconds 60` (one shell line). These are example
+limits for operator review, not authorization to run. Both the exact baseline marker
+and successful native result must pass; missing native fields remain unknown.

@@ -17,7 +17,9 @@ from claude_agent_sdk import (
 
 from agent_runtime.providers.claude.permissions import read_allowed
 from agent_runtime.tasks.executor import NativeResult
-from agent_runtime.tasks.models import ExecutionRequest
+from agent_runtime.tasks.models import ExecutionRequest, sdk_succeeded
+from agent_runtime.telemetry.events import observe_message
+from agent_runtime.telemetry.metrics import ObservedUsage
 from agent_runtime.telemetry.recorder import Recorder
 
 SYSTEM_ENV = {
@@ -84,6 +86,39 @@ class ClaudeAdapter:
                 }
             }
 
+        async def after_tool(input_data, tool_use_id, context):
+            recorder.event(
+                "hook.callback",
+                {"hook": input_data.get("hook_event_name"), "input": input_data},
+                "hook",
+            )
+            recorder.event(
+                "tool.result",
+                {
+                    "tool_use_id": tool_use_id,
+                    "tool_name": input_data.get("tool_name"),
+                    "result": input_data.get("tool_response"),
+                    "error": input_data.get("error"),
+                    "provenance": "sdk-hook",
+                },
+                "hook",
+            )
+            return {}
+
+        async def subagent(input_data, tool_use_id, context):
+            started = input_data.get("hook_event_name") == "SubagentStart"
+            recorder.event(
+                "subagent.started" if started else "subagent.stopped",
+                {
+                    "agent_id": input_data.get("agent_id"),
+                    "agent_type": input_data.get("agent_type"),
+                    "session_id": input_data.get("session_id"),
+                    "provenance": "sdk-hook",
+                },
+                "hook",
+            )
+            return {}
+
         # SDK merges os.environ before options.env. Explicitly blank unapproved inherited
         # variables so external credentials/endpoints/settings do not leak to the child.
         environment = {key: "" for key in os.environ if key.upper() not in SYSTEM_ENV}
@@ -102,7 +137,13 @@ class ClaudeAdapter:
             strict_mcp_config=True,
             permission_mode="default",
             can_use_tool=decide,
-            hooks={"PreToolUse": [HookMatcher(hooks=[before_tool])]},
+            hooks={
+                "PreToolUse": [HookMatcher(hooks=[before_tool])],
+                "PostToolUse": [HookMatcher(hooks=[after_tool])],
+                "PostToolUseFailure": [HookMatcher(hooks=[after_tool])],
+                "SubagentStart": [HookMatcher(hooks=[subagent])],
+                "SubagentStop": [HookMatcher(hooks=[subagent])],
+            },
             cwd=str(request.workspace),
             model=request.model,
             max_turns=request.limits.max_turns,
@@ -118,9 +159,11 @@ class ClaudeAdapter:
         if not self.environment.get("ANTHROPIC_API_KEY"):
             raise ValueError("ANTHROPIC_API_KEY must be supplied externally for a live run")
         result = None
+        observed_usage = ObservedUsage()
         async with ClaudeSDKClient(options=self.options(request, recorder)) as client:
             await client.query(request.instructions)
             async for message in client.receive_response():
+                observe_message(message, recorder, observed_usage)
                 payload = (
                     asdict(message) if is_dataclass(message) else {"type": type(message).__name__}
                 )
@@ -148,7 +191,32 @@ class ClaudeAdapter:
                             "scope": "sdk-call-native",
                             "estimate": True,
                         },
+                        application_usage=observed_usage.snapshot(),
                     )
+                    if request.scenario_id == "sdk.fundamentals":
+                        observed = (message.result or "").strip()
+                        check = {
+                            "id": "exact-baseline-marker",
+                            "expected": "CAS_SDK_BASELINE_OK",
+                            "observed": observed,
+                            "outcome": "pass" if observed == "CAS_SDK_BASELINE_OK" else "fail",
+                            "evidence_refs": [f"runs/{recorder.run_id}/events.jsonl"],
+                        }
+                        from dataclasses import replace
+
+                        native_ok = sdk_succeeded(result.outcome)
+                        native_check = {
+                            "id": "native-success",
+                            "expected": True,
+                            "observed": native_ok,
+                            "outcome": "pass" if native_ok else "fail",
+                            "evidence_refs": [f"runs/{recorder.run_id}/events.jsonl"],
+                        }
+                        result = replace(result, checks=[check, native_check])
+                    # A subsequent native stream/context error must not erase already
+                    # observed outcome/cost evidence from a failed run summary.
+                    recorder.record["sdk_outcome"] = result.outcome
+                    recorder.record["usage"]["sdk"] = result.usage
         if result is None:
             raise RuntimeError("SDK stream ended without a terminal ResultMessage")
         return result
