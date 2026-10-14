@@ -46,3 +46,10 @@ support pinned source review, not runtime guarantees. The umbrella research repo
 separately gated next-probe proposal. New controls have no live evidence yet. Existing
 query consent is spent. Native initialization/diagnostics and inference require new
 bounded approval; no automatic repeat or fallback is implied.
+
+The separate `agent_runtime.providers.claude.context_probe` module is now prepared,
+with no query call, a two-control outgoing protocol fence, count-only output and the
+existing Windows supervisor. Both native-startup and existing-login flags plus a
+reviewed composite source/executable hash are mandatory. No setup/default command
+runs it. Consult umbrella `docs/research/CONTEXT_PROBE_APPROVAL_SCOPE.md` before any
+new consent; it explains native profile/network risks beyond the CAS protocol boundary.

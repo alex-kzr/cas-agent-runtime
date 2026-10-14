@@ -13,3 +13,14 @@ SDK/native static source and saved safe metadata only. Six regression cases veri
 real SDK serialization, environment controls and metadata semantics. The full suite
 passed 96 tests; Ruff including security selection and wheel/sdist build passed. No
 native CLI/auth/model was started for this follow-up. No live capability is promoted.
+
+## Prepared native probe, never executed
+
+A separately gated diagnostic module now uses the existing supervisor and direct SDK
+connect/context control only. It has no query call; the outgoing transport rejects user
+frames and all but one initialize/one context request. The parent and worker verify a
+composite manifest of reviewed source/SDK/lock/executable files. Counts/tokens are
+whitelisted twice and unknown cleanup stays inconclusive. Native profile/content/network
+behavior is not proved by the fence; see the separate umbrella approval scope. Full
+offline suite: 106 tests in 12.579 seconds, lint/security/build pass. No probe/native
+auth/model was used for verification.
