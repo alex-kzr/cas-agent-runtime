@@ -65,3 +65,8 @@ Current auth policy: **subscription by default**, with separate per-invocation
 external-key execution with isolated state. No fallback between profiles, login, token
 copy or persistent reuse grant is automatic. Doctor reports selected mode without
 opening the native store. One authorized subscription baseline verified native status and a text result for its recorded versions/model; broader native behavior and context isolation remain unverified.
+
+Follow-up [context policy](docs/CONTEXT_ISOLATION.md) adds literal prompts, explicit
+skills/command and auto-memory disable requests, nonmanaged instruction exclusions and
+two pinned builtin-plugin overrides. Real SDK serialization is checked offline; native
+effect remains unverified. `tools/inspect_context_source.py` reads package files only.

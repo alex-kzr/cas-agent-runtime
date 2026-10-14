@@ -5,6 +5,8 @@ import subprocess
 from importlib.resources import files
 from pathlib import Path
 
+from agent_runtime.providers.claude.context import CONTEXT_ENV
+
 SYSTEM_ENV = {
     "PATH",
     "SYSTEMROOT",
@@ -51,6 +53,8 @@ def auth_environment(request, environment, state_directory, *, forbidden_roots=(
         API_TIMEOUT_MS=str(request.limits.timeout_seconds * 1000),
         CLAUDE_CODE_DISABLE_NONESSENTIAL_TRAFFIC="1",
     )
+    # Fixed runtime controls, never inherited from host settings or user env values.
+    selected.update(CONTEXT_ENV)
     selected["ANTHROPIC_CONFIG_DIR"] = str(state_directory / "unused-anthropic-profiles")
     if request.auth_mode == "api":
         selected["ANTHROPIC_API_KEY"] = environment.get("ANTHROPIC_API_KEY", "")

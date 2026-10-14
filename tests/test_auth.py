@@ -169,7 +169,7 @@ class SubscriptionAdapterTests(unittest.IsolatedAsyncioTestCase):
     async def test_valid_personal_session_uses_sdk_without_key_and_records_auth_mode(self):
         from subprocess import CompletedProcess
 
-        from claude_agent_sdk import ResultMessage
+        from claude_agent_sdk import ResultMessage, SystemMessage
 
         from agent_runtime.providers.claude.client import ClaudeAdapter
         from agent_runtime.tasks.executor import Executor
@@ -185,6 +185,16 @@ class SubscriptionAdapterTests(unittest.IsolatedAsyncioTestCase):
                 self.prompt = prompt
 
             async def receive_response(self):
+                yield SystemMessage(
+                    subtype="init",
+                    data={
+                        "skills": ["synthetic"],
+                        "plugins": [],
+                        "tools": [],
+                        "mcp_servers": [],
+                        "memory_paths": {},
+                    },
+                )
                 yield ResultMessage(
                     subtype="success",
                     duration_ms=1,
@@ -236,6 +246,20 @@ class SubscriptionAdapterTests(unittest.IsolatedAsyncioTestCase):
             self.assertNotIn("ANTHROPIC_API_KEY", options.env)
             self.assertEqual(options.env["CLAUDE_CONFIG_DIR"], str(native))
             self.assertEqual(json.loads(options.settings)["forceLoginMethod"], "claudeai")
+            self.assertEqual(
+                run["configuration"]["context_policy"], "literal-input-no-discovery-v1"
+            )
+            self.assertEqual(run["configuration"]["context_isolation"], "unverified")
+            events = [
+                json.loads(line)
+                for line in (root / "data/runs" / run["run_id"] / "events.jsonl")
+                .read_text()
+                .splitlines()
+            ]
+            observed = [event["payload"] for event in events if event["type"] == "context.observed"]
+            self.assertEqual(len(observed), 1)
+            self.assertEqual(observed[0]["skills_count"], 1)
+            self.assertIsNone(observed[0]["content_loaded"])
 
     async def test_subscription_cli_requires_reuse_consent_even_with_ambient_api_key(self):
         import io

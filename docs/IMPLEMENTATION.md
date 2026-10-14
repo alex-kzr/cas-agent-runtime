@@ -7,3 +7,9 @@ been configured. The initial offline implementation stage made no model call or 
 See umbrella docs/review/IMPLEMENTATION.md for cross-component evidence and remaining
 limitations. Application changes belong in this repository, shared contracts and research
 conclusions in umbrella. Offline test results never establish native SDK/model behavior.
+
+The subsequent [context policy](CONTEXT_ISOLATION.md) investigation uses installed
+SDK/native static source and saved safe metadata only. Six regression cases verify
+real SDK serialization, environment controls and metadata semantics. The full suite
+passed 96 tests; Ruff including security selection and wheel/sdist build passed. No
+native CLI/auth/model was started for this follow-up. No live capability is promoted.

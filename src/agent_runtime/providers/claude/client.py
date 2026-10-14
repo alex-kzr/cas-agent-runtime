@@ -24,6 +24,11 @@ from agent_runtime.providers.claude.auth import (
     require_auth,
     subscription_status,
 )
+from agent_runtime.providers.claude.context import (
+    CONTEXT_POLICY,
+    CONTEXT_SETTINGS,
+    context_observation,
+)
 from agent_runtime.providers.claude.permissions import read_allowed
 from agent_runtime.tasks.executor import NativeResult
 from agent_runtime.tasks.models import ExecutionRequest, sdk_succeeded
@@ -125,14 +130,17 @@ class ClaudeAdapter:
         )
         return ClaudeAgentOptions(
             cli_path=str(native_cli()),
-            settings=json.dumps(SUBSCRIPTION_SETTINGS)
-            if request.auth_mode == "subscription"
-            else None,
+            settings=json.dumps(
+                CONTEXT_SETTINGS
+                | (SUBSCRIPTION_SETTINGS if request.auth_mode == "subscription" else {})
+            ),
             tools=["Read"] if request.agent_name == "read-only-v1" else [],
             allowed_tools=[],
             setting_sources=[],
             skills=[],
             plugins=[],
+            extra_args={"disable-slash-commands": None},
+            verbatim_prompts=True,
             mcp_servers={},
             strict_mcp_config=True,
             permission_mode="default",
@@ -175,11 +183,29 @@ class ClaudeAdapter:
             info = subscription_status(request, selected)
             recorder.record["configuration"].update(info)
             recorder.event("auth.selected", info)
+        recorder.record["configuration"]["context_policy"] = CONTEXT_POLICY
+        recorder.record["configuration"]["context_isolation"] = "unverified"
+        recorder.event(
+            "context.configured",
+            {
+                "policy": CONTEXT_POLICY,
+                "verbatim_prompts": True,
+                "disable_slash_commands": True,
+                "auto_memory": "requested-disabled",
+                "nonmanaged_instructions": "requested-excluded",
+                "bundled_skills": "requested-disabled",
+                "observed_builtin_plugins": "requested-disabled-by-exact-id",
+                "native_effect": "not-live-verified",
+            },
+        )
         result = None
         observed_usage = ObservedUsage()
         async with ClaudeSDKClient(options=self.options(request, recorder)) as client:
             await client.query(request.instructions)
             async for message in client.receive_response():
+                context = context_observation(message)
+                if context is not None:
+                    recorder.event("context.observed", context, "sdk")
                 observe_message(message, recorder, observed_usage)
                 payload = (
                     asdict(message) if is_dataclass(message) else {"type": type(message).__name__}
