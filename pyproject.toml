@@ -1,10 +1,25 @@
 [project]
 name = "cas-agent-runtime"
-version = "0.0.0"
-description = "CAS agent-runtime: documentation scaffold, implementation pending"
+version = "0.1.0"
+description = "CAS direct Claude Agent SDK task and scenario runtime"
 readme = "README.md"
 requires-python = ">=3.12"
-dependencies = []
+dependencies = ["claude-agent-sdk==0.2.165", "jsonschema>=4.20,<5"]
 
-[tool.uv]
-package = false
+[build-system]
+requires = ["hatchling>=1.27,<2"]
+build-backend = "hatchling.build"
+
+[tool.hatch.build.targets.wheel]
+packages = ["src/agent_runtime"]
+
+[dependency-groups]
+dev = ["ruff>=0.14,<1"]
+
+[tool.ruff]
+target-version = "py312"
+line-length = 100
+
+[tool.ruff.lint]
+select = ["E", "F", "I", "B", "UP"]
+ignore = ["E501"]
