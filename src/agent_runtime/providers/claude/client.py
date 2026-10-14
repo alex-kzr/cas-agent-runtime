@@ -36,7 +36,7 @@ from agent_runtime.providers.claude.permissions import read_allowed
 from agent_runtime.tasks.executor import NativeResult
 from agent_runtime.tasks.models import ExecutionRequest, sdk_succeeded
 from agent_runtime.telemetry.events import observe_message
-from agent_runtime.telemetry.metrics import ObservedUsage
+from agent_runtime.telemetry.metrics import ObservedUsage, compare_usage
 from agent_runtime.telemetry.recorder import Recorder
 
 
@@ -164,6 +164,7 @@ class ClaudeAdapter:
             return {}
 
         async def subagent(input_data, tool_use_id, context):
+            recorder.record["configuration"]["subagent_activity_observed"] = True
             started = input_data.get("hook_event_name") == "SubagentStart"
             recorder.event(
                 "subagent.started" if started else "subagent.stopped",
@@ -320,6 +321,13 @@ class ClaudeAdapter:
                     # observed outcome/cost evidence from a failed run summary.
                     recorder.record["sdk_outcome"] = result.outcome
                     recorder.record["usage"]["sdk"] = result.usage
+                    result.application_usage["comparison"] = compare_usage(
+                        result.usage, result.application_usage, resumed=bool(request.resumes_run_id)
+                    )
+                    recorder.record["usage"]["application"] = result.application_usage
+                    recorder.event(
+                        "usage.comparison", result.application_usage["comparison"], "application"
+                    )
                     observe_session_identity(message, request, recorder)
                 # Worker-private snapshot retains observations even if native context
                 # shutdown later stalls and the parent must terminate the process tree.

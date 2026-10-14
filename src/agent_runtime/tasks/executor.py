@@ -75,6 +75,17 @@ class Executor:
                 recorder.record["sdk_outcome"] = native.outcome
                 recorder.record["usage"]["sdk"] = native.usage
                 recorder.record["usage"]["application"] = native.application_usage
+                if native.source == "sdk" and not (native.application_usage or {}).get(
+                    "comparison"
+                ):
+                    from agent_runtime.telemetry.metrics import compare_usage
+
+                    application = dict(native.application_usage or {})
+                    application["comparison"] = compare_usage(
+                        native.usage, application, resumed=bool(request.resumes_run_id)
+                    )
+                    recorder.record["usage"]["application"] = application
+                    recorder.event("usage.comparison", application["comparison"], "application")
                 summary = recorder.clean(native.text)
                 passed = isinstance(summary, str) and bool(summary.strip())
                 recorder.record["validation"] = {

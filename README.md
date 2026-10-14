@@ -76,3 +76,5 @@ effect remains unverified. `tools/inspect_context_source.py` reads package files
 The synthetic `coding-fixture-v1` profile is available through opt-in console task controls, not arbitrary CLI workspace execution. Runtime owns bounded read/write/fixed-test MCP tools, validated snapshots/diff/test artifacts and explicit new-run continuation. See [coding implementation](docs/CODING.md). Native coding/resume are pending; offline tests inject adapters only.
 
 Subsequent live result: CAS-CODING-LIVE-001 passed one separately authorized production-console coding task against source `133bfbf`: three private MCP tools, matching passing tests/diff and owned cleanup. See umbrella docs/research/CODING_E2E_RESULT_2026-10-14.md. Native resume/negative variants and context isolation remain unverified; approval is consumed.
+
+Observed CLI metadata and usage diagnostics are now covered offline: main init version has provenance/conflict handling; native and derived tokens remain separate; resumed/subagent deltas are withheld. Historical live records are unchanged. See umbrella docs/review/OBSERVABILITY_DIAGNOSTICS_2026-10-14.md.
