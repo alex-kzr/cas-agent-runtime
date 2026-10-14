@@ -35,3 +35,7 @@ empty. Independent read-only review matched both output JSON and approved hashes
 See umbrella `docs/research/CONTEXT_PROBE_RESULT_2026-10-14.md` and sanitized evidence.
 The frozen source was unchanged. Context isolation and billing remain unverified;
 approval is consumed and no repeat or inference is authorized by it.
+
+## Offline practical coding implementation
+
+The subsequent coding/control changes extend the shared executor with a synthetic arithmetic profile, test-bound acceptance, snapshots/diff, opt-in task controller and explicit SDK resume forwarding. Tests use scripted adapters and owned Python fixtures; no new Claude/auth/model call was made. Earlier probe fingerprints describe their historical approved version and must not be reused against this changed source. See [coding guide](CODING.md) and umbrella docs/review/CODING_CONSOLE.md.

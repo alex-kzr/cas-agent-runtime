@@ -143,11 +143,11 @@ class Recorder:
     ):
         self.data_dir = data_dir
         self.secrets = tuple(secrets)
-        self.run_id = str(uuid4())
+        self.run_id = request.run_id or str(uuid4())
         self.directory = data_dir / "runs" / self.run_id
         self.directory.mkdir(parents=True, exist_ok=False)
         self.seq = 0
-        self.task_id = str(uuid4()) if request.kind == "task" else None
+        self.task_id = (request.task_id or str(uuid4())) if request.kind == "task" else None
         source_id = self.task_id or self.run_id
         instructions_ref = f"tasks/{source_id}/task.json"
         self.record = {
@@ -177,11 +177,13 @@ class Recorder:
                 "auth_mode": request.auth_mode,
                 "session_status": "not-checked",
                 "api_fallback": "disabled",
+                "live_authorized": request.live_authorized,
+                "existing_login_authorized": request.allow_existing_login,
             },
             "workspace": str(request.workspace),
             "limits": asdict(request.limits),
             "session_id": None,
-            "resumes_run_id": None,
+            "resumes_run_id": request.resumes_run_id,
             "retry_of_run_id": None,
             "validation": {"status": "pending", "validator_version": "1", "checks": []},
             "sdk_outcome": None,

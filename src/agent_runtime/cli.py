@@ -8,6 +8,7 @@ import json
 import os
 import shutil
 import subprocess
+import sys
 from importlib.metadata import PackageNotFoundError, version
 from pathlib import Path
 from uuid import UUID, uuid4
@@ -94,7 +95,10 @@ def parser() -> argparse.ArgumentParser:
     scenario_run.add_argument("--max-budget-usd")
     scenario_run.add_argument("--timeout-seconds", type=int, default=30)
     commands.add_parser("report").add_argument("run_id")
-    commands.add_parser("console", help="Launch independently installed read-only console")
+    console = commands.add_parser("console", help="Launch independently installed console")
+    console.add_argument(
+        "--enable-tasks", action="store_true", help="Opt in to coding fixture task control"
+    )
     return result
 
 
@@ -290,6 +294,27 @@ def main(argv=None) -> int:
             )
             output({"report": str(path)})
         elif args.command == "console":
+            if args.enable_tasks:
+                from importlib.util import find_spec
+
+                if find_spec("agent_console") is None:
+                    raise ValueError(
+                        "Task controls require agent-console installed in the runtime Python environment; see coding guide"
+                    )
+                return subprocess.call(  # noqa: S603 - current interpreter and fixed module/argv, no shell
+                    [
+                        sys.executable,
+                        "-m",
+                        "agent_console",
+                        "--data-dir",
+                        str(cfg.data_dir),
+                        "--host",
+                        cfg.console_host,
+                        "--port",
+                        str(cfg.console_port),
+                        "--enable-tasks",
+                    ]
+                )
             executable = shutil.which("cas-console")
             if not executable:
                 candidate = (

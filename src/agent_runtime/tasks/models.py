@@ -86,6 +86,10 @@ class ExecutionRequest:
     auth_mode: Literal["subscription", "api"] = "subscription"
     allow_existing_login: bool = False
     login_config_dir: str | None = None
+    run_id: str | None = None
+    resumes_run_id: str | None = None
+    resume_session_id: str | None = None
+    task_id: str | None = None
 
     def __post_init__(self) -> None:
         if (
@@ -95,7 +99,13 @@ class ExecutionRequest:
             raise ValueError("Unknown auth mode or invalid login-reuse consent")
         if self.login_config_dir is not None and not isinstance(self.login_config_dir, str):
             raise ValueError("Native login directory must be an explicit path string")
-        if self.agent_name not in {"text-only-v1", "read-only-v1"}:
+        from uuid import UUID
+        for value in (self.run_id, self.resumes_run_id, self.task_id):
+            if value is not None and str(UUID(value)) != value:
+                raise ValueError("Invalid run identity")
+        if bool(self.resumes_run_id) != bool(self.resume_session_id):
+            raise ValueError("Continuation requires both previous run and native session")
+        if self.agent_name not in {"text-only-v1", "read-only-v1", "coding-fixture-v1"}:
             raise ValueError("Unknown agent profile")
         if self.kind not in {"task", "scenario"}:
             raise ValueError("Unknown execution kind")

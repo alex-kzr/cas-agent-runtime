@@ -70,3 +70,7 @@ Follow-up [context policy](docs/CONTEXT_ISOLATION.md) adds literal prompts, expl
 skills/command and auto-memory disable requests, nonmanaged instruction exclusions and
 two pinned builtin-plugin overrides. Real SDK serialization is checked offline; native
 effect remains unverified. `tools/inspect_context_source.py` reads package files only.
+
+## Opt-in coding console
+
+The synthetic `coding-fixture-v1` profile is available through opt-in console task controls, not arbitrary CLI workspace execution. Runtime owns bounded read/write/fixed-test MCP tools, validated snapshots/diff/test artifacts and explicit new-run continuation. See [coding implementation](docs/CODING.md). Native coding/resume are pending; offline tests inject adapters only.

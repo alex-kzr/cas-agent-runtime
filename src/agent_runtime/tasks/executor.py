@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import asyncio
 import hashlib
+import json
 import time
 from dataclasses import dataclass
 from pathlib import Path
@@ -48,6 +49,7 @@ class Executor:
             started = time.monotonic()
             summary = None
             artifact_ids = []
+            coding = None
             target = State.FAILED
             stage = "validation"
             try:
@@ -60,6 +62,10 @@ class Executor:
                 request.workspace.mkdir(parents=True, exist_ok=True)
                 if not request.workspace.is_dir():
                     raise ValueError("Workspace is not a directory")
+                if request.agent_name == "coding-fixture-v1":
+                    from agent_runtime.tasks.coding import CodingWorkspace
+
+                    coding = CodingWorkspace(request.workspace, recorder.directory / "coding")
                 recorder.transition(State.RUNNING)
                 stage = "sdk"
                 async with asyncio.timeout(request.limits.timeout_seconds):
@@ -152,9 +158,14 @@ class Executor:
                     "timeout", "wall_timeout", "Wall timeout; external cleanup unverified"
                 )
             except asyncio.CancelledError:
-                target = State.INTERRUPTED
+                cleanup = (recorder.record["usage"]["application"] or {}).get("cleanup", {})
+                target = State.CANCELLED if cleanup.get("tree_empty") else State.INTERRUPTED
                 recorder.record["error"] = self.error(
-                    "interrupted", "operator_interrupt", "Interrupted; external cleanup unverified"
+                    "cancelled" if target == State.CANCELLED else "interrupted",
+                    "operator_interrupt",
+                    "Operator cancelled; owned tree empty"
+                    if target == State.CANCELLED
+                    else "Interrupted; external cleanup unverified",
                 )
             except WorkerCleanupError:
                 target = State.INTERRUPTED
@@ -169,6 +180,75 @@ class Executor:
                 recorder.record["error"] = self.error(
                     stage, type(error).__name__, recorder.clean(str(error))
                 )
+            if coding is not None:
+                try:
+                    cleanup = (recorder.record["usage"]["application"] or {}).get("cleanup")
+                    if cleanup is not None and not cleanup.get("tree_empty"):
+                        raise ValueError("Cannot snapshot workspace before owned-tree cleanup")
+                    report = coding.capture()
+                    passed = report["tests_passed"] and (
+                        report["changed"] or bool(request.resumes_run_id)
+                    )
+                    recorder.record["validation"] = {
+                        "status": "passed" if passed else "failed",
+                        "validator_version": "coding-fixture-v1",
+                        "checks": [{"id": "changed-and-fixed-tests-pass", "passed": passed}],
+                    }
+                    if target == State.COMPLETED and not passed:
+                        target = State.FAILED
+                        recorder.record["error"] = self.error(
+                            "validation",
+                            "coding_acceptance_failed",
+                            "Matching tests and a changed fixture are required",
+                        )
+                    manifest_path = recorder.directory / "artifacts.json"
+                    manifest = (
+                        json.loads(manifest_path.read_text())
+                        if manifest_path.is_file()
+                        else {"schema_version": 1, "run_id": recorder.run_id, "artifacts": []}
+                    )
+                    for source in sorted(coding.directory.iterdir()):
+                        if source.name not in {
+                            "before.py",
+                            "after.py",
+                            "changes.diff",
+                            "coding.json",
+                            "tests.json",
+                        }:
+                            continue
+                        artifact_id = str(uuid4())
+                        content = source.read_bytes()
+                        relative = f"{artifact_id}/{source.name}"
+                        path = self.data_dir / "artifacts" / recorder.run_id / relative
+                        path.parent.mkdir(parents=True, exist_ok=False)
+                        path.write_bytes(content)
+                        artifact_ids.append(artifact_id)
+                        manifest["artifacts"].append(
+                            {
+                                "artifact_id": artifact_id,
+                                "path": relative,
+                                "media_type": "application/json"
+                                if source.suffix == ".json"
+                                else "text/plain",
+                                "size_bytes": len(content),
+                                "sha256": hashlib.sha256(content).hexdigest(),
+                                "producer": "agent-runtime",
+                                "sensitivity": "normal",
+                            }
+                        )
+                    validate_document("artifacts", manifest)
+                    atomic_json(manifest_path, manifest)
+                    recorder.record["artifacts_ref"] = f"runs/{recorder.run_id}/artifacts.json"
+                    recorder.event("validation.result", recorder.record["validation"], "validator")
+                except (ValueError, OSError, SyntaxError):
+                    recorder.record["evidence_status"] = "partial"
+                    if target == State.COMPLETED:
+                        target = State.FAILED
+                    recorder.record["error"] = self.error(
+                        "validation",
+                        "coding_evidence_failed",
+                        "Safe fixture evidence could not be collected",
+                    )
             recorder.record["usage"]["application"] = {
                 **(recorder.record["usage"]["application"] or {}),
                 "duration_ms": round((time.monotonic() - started) * 1000),

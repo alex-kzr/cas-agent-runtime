@@ -42,7 +42,13 @@ class ClaudeAdapter:
         self.environment = dict(environment)
 
     def options(self, request: ExecutionRequest, recorder: Recorder) -> ClaudeAgentOptions:
+        from agent_runtime.tasks.coding import PROFILE, TOOLS, CodingWorkspace, sdk_server
+        coding = (CodingWorkspace(request.workspace, recorder.data_dir / 'runs' / recorder.run_id / 'coding')
+                  if request.agent_name == PROFILE else None)
+
         def permitted(name, arguments):
+            if coding is not None:
+                return name in TOOLS and isinstance(arguments, dict)
             return request.agent_name == "read-only-v1" and read_allowed(
                 request.workspace, name, arguments
             )
@@ -141,7 +147,8 @@ class ClaudeAdapter:
             plugins=[],
             extra_args={"disable-slash-commands": None},
             verbatim_prompts=True,
-            mcp_servers={},
+            mcp_servers=({'cas_workspace': sdk_server(coding, recorder)} if coding else {}),
+            resume=request.resume_session_id,
             strict_mcp_config=True,
             permission_mode="default",
             can_use_tool=decide,
@@ -218,6 +225,7 @@ class ClaudeAdapter:
                 session_id = getattr(message, "session_id", None)
                 if session_id:
                     recorder.record["session_id"] = session_id
+                    recorder.save()
                 if isinstance(message, ResultMessage):
                     result = NativeResult(
                         message.result,
