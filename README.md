@@ -31,7 +31,9 @@ One explicitly authorized subscription text baseline completed with two passing 
 policy and explicit deny on filesystem errors. Both profiles request empty MCP/skills/plugins lists
 and accept nonempty text only. Native init still advertised builtin skills/plugins and a memory path in the live baseline; context isolation and native tool enforcement remain unverified.
 Timeouts/interrupts are INTERRUPTED; `runs recover` marks abandoned records without retry.
-Resume, automatic retries, scheduler and production isolation are not implemented.
+Explicit new-run continuation is wired and tested offline for the coding control path;
+native history recovery remains unverified. Automatic retries, scheduler and production
+isolation are not implemented.
 
 Console launch requires the independent agent-console environment. Canonical contracts,
 security requirements and research scope live in umbrella docs, with byte-identical
@@ -73,7 +75,7 @@ effect remains unverified. `tools/inspect_context_source.py` reads package files
 
 ## Opt-in coding console
 
-The synthetic `coding-fixture-v1` profile is available through opt-in console task controls, not arbitrary CLI workspace execution. Runtime owns bounded read/write/fixed-test MCP tools, validated snapshots/diff/test artifacts and explicit new-run continuation. See [coding implementation](docs/CODING.md). Native coding/resume are pending; offline tests inject adapters only.
+The synthetic `coding-fixture-v1` profile is available through opt-in console task controls, not arbitrary CLI workspace execution. Runtime owns bounded read/write/fixed-test MCP tools, validated snapshots/diff/test artifacts and explicit new-run continuation. See [coding implementation](docs/CODING.md). One bounded native coding positive is recorded below; native resume and broader coding variants remain pending. Offline tests inject adapters only.
 
 Subsequent live result: CAS-CODING-LIVE-001 passed one separately authorized production-console coding task against source `133bfbf`: three private MCP tools, matching passing tests/diff and owned cleanup. See umbrella docs/research/CODING_E2E_RESULT_2026-10-14.md. Native resume/negative variants and context isolation remain unverified; approval is consumed.
 

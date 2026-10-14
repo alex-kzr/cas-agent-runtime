@@ -263,6 +263,9 @@ class ClaudeAdapter:
         result = None
         observed_usage = ObservedUsage()
         async with ClaudeSDKClient(options=self.options(request, recorder)) as client:
+            recorder.event(
+                "sdk.query_started", {"resume_requested": bool(request.resume_session_id)}, "sdk"
+            )
             await client.query(request.instructions)
             async for message in client.receive_response():
                 context = context_observation(message)
