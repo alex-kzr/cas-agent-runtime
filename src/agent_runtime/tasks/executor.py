@@ -10,7 +10,13 @@ from pathlib import Path
 from typing import Any
 from uuid import uuid4
 
-from agent_runtime.tasks.models import ExecutionRequest, State, sdk_succeeded, validate_document
+from agent_runtime.tasks.models import (
+    ExecutionRequest,
+    State,
+    WorkerCleanupError,
+    sdk_succeeded,
+    validate_document,
+)
 from agent_runtime.telemetry.recorder import Recorder, RunLock, atomic_json, reconcile
 
 
@@ -149,6 +155,13 @@ class Executor:
                 target = State.INTERRUPTED
                 recorder.record["error"] = self.error(
                     "interrupted", "operator_interrupt", "Interrupted; external cleanup unverified"
+                )
+            except WorkerCleanupError:
+                target = State.INTERRUPTED
+                recorder.record["error"] = self.error(
+                    "interrupted",
+                    "cleanup_unconfirmed",
+                    "Owned SDK worker cleanup was not confirmed",
                 )
             except Exception as error:
                 target = State.FAILED

@@ -217,6 +217,9 @@ class ClaudeAdapter:
                     # observed outcome/cost evidence from a failed run summary.
                     recorder.record["sdk_outcome"] = result.outcome
                     recorder.record["usage"]["sdk"] = result.usage
+                # Worker-private snapshot retains observations even if native context
+                # shutdown later stalls and the parent must terminate the process tree.
+                recorder.save()
         if result is None:
             raise RuntimeError("SDK stream ended without a terminal ResultMessage")
         return result

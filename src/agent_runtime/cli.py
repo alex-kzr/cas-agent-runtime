@@ -73,6 +73,9 @@ def parser() -> argparse.ArgumentParser:
     scenario_run = scenarios.add_parser("run")
     scenario_run.add_argument("scenario_id")
     scenario_run.add_argument("--allow-live", action="store_true")
+    scenario_run.add_argument(
+        "--model", help="Explicit native model ID; required for live research"
+    )
     scenario_run.add_argument("--max-turns", type=int)
     scenario_run.add_argument("--max-budget-usd")
     scenario_run.add_argument("--timeout-seconds", type=int, default=30)
@@ -153,7 +156,7 @@ def main(argv=None) -> int:
             if args.file.stat().st_size > 256_000:
                 raise ValueError("Task file exceeds 256 KB")
             instructions = args.file.read_text(encoding="utf-8")
-            from agent_runtime.providers.claude.client import ClaudeAdapter
+            from agent_runtime.providers.claude.supervised import SupervisedClaudeAdapter
             from agent_runtime.tasks.executor import Executor
 
             request = ExecutionRequest(
@@ -168,7 +171,7 @@ def main(argv=None) -> int:
             run = asyncio.run(
                 Executor(
                     cfg.data_dir,
-                    ClaudeAdapter(os.environ),
+                    SupervisedClaudeAdapter(os.environ),
                     secrets=[os.environ["ANTHROPIC_API_KEY"]],
                     workspace_root=cfg.workspace_root,
                 ).execute(request)
@@ -211,10 +214,12 @@ def main(argv=None) -> int:
                         raise PermissionError("Live SDK baseline requires explicit --allow-live")
                     if not os.environ.get("ANTHROPIC_API_KEY"):
                         raise ValueError("ANTHROPIC_API_KEY must be supplied externally")
-                    from agent_runtime.providers.claude.client import ClaudeAdapter
+                    if not args.model:
+                        raise ValueError("Live SDK baseline requires explicit --model")
+                    from agent_runtime.providers.claude.supervised import SupervisedClaudeAdapter
 
                     limits = cfg.live_limits(timeout_seconds=args.timeout_seconds)
-                    client = ClaudeAdapter(os.environ)
+                    client = SupervisedClaudeAdapter(os.environ)
                     secrets = [os.environ["ANTHROPIC_API_KEY"]]
                 else:
                     limits = Limits(1, "0.01", 10)
@@ -225,6 +230,7 @@ def main(argv=None) -> int:
                     cfg.workspace_root / str(uuid4()),
                     limits,
                     args.scenario_id,
+                    model=args.model if live else None,
                     live_authorized=live,
                 )
                 run = asyncio.run(

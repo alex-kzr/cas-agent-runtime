@@ -26,6 +26,21 @@ SCENARIOS = {
         "group": "platform",
         "family_id": "LOCAL-REDACTION",
     },
+    "platform.structured-output": {
+        "title": "Validate synthetic JSON output independently against JSON Schema",
+        "group": "platform",
+        "family_id": "OUT-01-local",
+    },
+    "platform.usage": {
+        "title": "Verify observed usage deduplication and explicit unknown scope",
+        "group": "platform",
+        "family_id": "USE-01-local",
+    },
+    "platform.permissions": {
+        "title": "Verify local Read policy with disposable synthetic files",
+        "group": "platform",
+        "family_id": "SEC-01-local",
+    },
 }
 
 
@@ -66,11 +81,24 @@ class LocalValidation:
                     "evidence_refs": [],
                 }
             )
+        elif request.scenario_id.startswith("platform."):
+            from agent_runtime.scenarios.local_research import (
+                permission_checks,
+                structured_checks,
+                usage_checks,
+            )
+
+            cases = {
+                "platform.structured-output": structured_checks,
+                "platform.usage": usage_checks,
+                "platform.permissions": lambda: permission_checks(request.workspace),
+            }
+            if request.scenario_id not in cases:
+                raise ValueError("Unknown local scenario")
+            checks = cases[request.scenario_id]()
         else:
             raise ValueError("Unknown local scenario")
         recorder.event("validation.result", {"mode": "offline", "checks": checks}, "validator")
-        if any(check["outcome"] != "pass" for check in checks):
-            raise ValueError("Local validation failed")
         return NativeResult(
             json.dumps({"mode": "offline", "checks": checks}),
             None,

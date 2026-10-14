@@ -40,7 +40,22 @@ schema snapshots packaged here. See [baseline evidence](docs/BASELINE.md).
 ## Prepared native baseline (requires separate authorization)
 
 After explicit spend approval and an externally supplied native key, the prepared
-command is `cas-cli scenarios run sdk.fundamentals --allow-live --max-turns 1
+command is `cas-cli scenarios run sdk.fundamentals --model claude-haiku-5-5 --allow-live --max-turns 1
 --max-budget-usd 0.10 --timeout-seconds 60` (one shell line). These are example
 limits for operator review, not authorization to run. Both the exact baseline marker
 and successful native result must pass; missing native fields remain unknown.
+
+Offline research preparation adds `platform.structured-output`, `platform.usage` and
+`platform.permissions`. They validate CAS policy/accounting/validation with synthetic
+fixtures, never native model behavior. Failed checks persist failed assertions.
+
+## Bounded worker cleanup (Windows)
+
+CLI live execution now supervises the direct SDK adapter in a private worker. It starts
+suspended, receives its Windows Job Object, resumes, then reads bounded private stdin.
+At deadline, cancellation or worker exit, remaining owned descendants are terminated;
+exit observation has a separate 3-second deadline. Cleanup status/duration are persisted.
+Unknown cleanup is INTERRUPTED; timeout stays INTERRUPTED even if the tree was reaped.
+This does not guarantee provider-side cancellation, a hard invoice ceiling, or total
+CLI completion within the worker deadline plus cleanup grace. Supervised live execution
+fails closed outside Windows. Offline commands and the single executor remain available.

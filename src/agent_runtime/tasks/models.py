@@ -26,6 +26,10 @@ class State(StrEnum):
 TERMINAL = {State.COMPLETED, State.FAILED, State.CANCELLED, State.INTERRUPTED}
 
 
+class WorkerCleanupError(RuntimeError):
+    """Owned process tree could not be observed empty after bounded cleanup."""
+
+
 def sdk_succeeded(outcome: dict[str, Any] | None) -> bool:
     """Pinned SDK reports completed; None is documented compatibility with older CLI."""
     return bool(
