@@ -19,7 +19,7 @@ class OwnedProcess:
             "deadline_seconds": CLEANUP_SECONDS,
         }
 
-    async def run(self, command, payload, environment):
+    async def run(self, command, payload, environment, *, stderr_sink=None):
         if os.name != "nt":
             raise RuntimeError(
                 "Supervised live execution currently requires Windows Job Object support"
@@ -30,13 +30,15 @@ class OwnedProcess:
 
         job = WindowsJob()
         spawn = None
+        stderr_task = None
+        stderr_failure = None
         try:
             spawn = asyncio.create_task(
                 asyncio.create_subprocess_exec(  # noqa: S603 - trusted interpreter argv, no shell
                     *command,
                     stdin=subprocess.PIPE,
                     stdout=subprocess.DEVNULL,
-                    stderr=subprocess.DEVNULL,
+                    stderr=subprocess.PIPE if stderr_sink is not None else subprocess.DEVNULL,
                     env=environment,
                     creationflags=subprocess.CREATE_NO_WINDOW | 0x00000004,  # CREATE_SUSPENDED
                 )
@@ -47,7 +49,33 @@ class OwnedProcess:
             job.assign(self.process.pid)
             job.resume(self.process.pid)
             self.released = True
-            await self.process.communicate(payload)
+            if stderr_sink is None:
+                await self.process.communicate(payload)
+            else:
+                # Drain incrementally; never buffer raw stderr in communicate(). The
+                # caller must sanitize chunks before storing anything on disk.
+                async def drain_stderr():
+                    nonlocal stderr_failure
+                    while chunk := await self.process.stderr.read(4096):
+                        if stderr_failure is None:
+                            try:
+                                stderr_sink(chunk)
+                            except Exception as error:
+                                # Keep draining even when a caller's sink fails.
+                                stderr_failure = error
+
+                stderr_task = asyncio.create_task(drain_stderr())
+                try:
+                    self.process.stdin.write(payload)
+                    await self.process.stdin.drain()
+                except (BrokenPipeError, ConnectionResetError):
+                    pass
+                finally:
+                    self.process.stdin.close()
+                await self.process.wait()
+                await stderr_task
+                if stderr_failure is not None:
+                    raise RuntimeError("Stderr sink failed") from stderr_failure
             return self.process.returncode
         finally:
             started = time.monotonic()
@@ -74,6 +102,9 @@ class OwnedProcess:
                 # Closing the non-inheritable job handle kills remaining members even
                 # if a second cancellation interrupts the bounded observation await.
                 job.close()
+                if stderr_task is not None:
+                    stderr_task.cancel()
+                    await asyncio.gather(stderr_task, return_exceptions=True)
                 if self.process is None and spawn is not None:
 
                     def reap_late_worker(future):
