@@ -62,15 +62,24 @@ class SupervisionTests(unittest.IsolatedAsyncioTestCase):
                 await asyncio.wait_for(unrelated.wait(), 3)
 
     async def test_normal_worker_exit_still_cleans_leftover_descendant(self):
-        code = (
-            "import sys,subprocess;sys.stdin.buffer.read();"
-            "subprocess.Popen([sys.executable,'-c','import time;time.sleep(90)'])"
-        )
-        owner = OwnedProcess()
-        async with asyncio.timeout(5):
-            result = await owner.run([sys.executable, "-c", code], b"synthetic", {})
-        self.assertEqual(result, 0)
-        self.assertTrue(owner.cleanup["tree_empty"])
+        with tempfile.TemporaryDirectory() as directory:
+            marker = Path(directory) / "leftover-pid.json"
+            code = (
+                "import sys,subprocess,json,pathlib;sys.stdin.buffer.read();"
+                "p=subprocess.Popen([sys.executable,'-B','-I','-S','-c',"
+                "'import time;time.sleep(90)']);"
+                f"pathlib.Path({str(marker)!r}).write_text(json.dumps(p.pid))"
+            )
+            owner = OwnedProcess()
+            async with asyncio.timeout(5):
+                result = await owner.run(
+                    [sys._base_executable, "-B", "-I", "-S", "-c", code], b"synthetic", {}
+                )
+            self.assertEqual(result, 0)
+            self.assertTrue(owner.cleanup["tree_empty"])
+            self.assertTrue(owner.cleanup["forced"])
+            self.assertEqual(owner.cleanup["deadline_seconds"], 3.0)
+            self.assert_owned_fixture_pid_exited(json.loads(marker.read_text()))
 
     async def test_cancelled_worker_is_reaped_with_bounded_cleanup(self):
         owner = OwnedProcess()

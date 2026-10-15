@@ -24,6 +24,11 @@ The same executor handles manual tasks and real local validation scenarios. Loca
 have provider `local-validation`, null SDK outcome/usage and real assertion evidence.
 There is no selectable fake task provider. Unit tests explicitly inject test doubles.
 
+[Synthetic SES-01 missing-session/SID-mismatch/no-replay cases](docs/SESSION_NEGATIVE_CASES.md)
+reuse production executor/identity/control paths with mock streams. Select them through
+unittest, not the production provider catalog; passing fixtures are not native evidence.
+The saved user-run -02 pair separately verifies one bounded native resume positive.
+
 Live tasks require `task run --file task.md --allow-live --max-turns N --max-budget-usd B`,
 positive wall timeout and explicit auth-profile prerequisites. Do not run this as a setup check.
 One explicitly authorized subscription text baseline completed with two passing assertions; see umbrella docs/research/SUBSCRIPTION_BASELINE_2026-10-14.md. Further live calls need new authorization. Default `text-only-v1` disables every tool. Optional `--agent read-only-v1 --workspace
