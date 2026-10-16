@@ -28,7 +28,10 @@ class SupervisionTests(unittest.IsolatedAsyncioTestCase):
         if handle:
             try:
                 self.assertEqual(
-                    api.WaitForSingleObject(handle, 0), 0, "Owned fixture descendant is still alive"
+                    # Job accounting can reach zero before the process handle becomes
+                    # signaled. Bound this test-only observation, without changing
+                    # production cleanup or its three-second deadline.
+                    api.WaitForSingleObject(handle, 1000), 0, "Owned fixture descendant is still alive"
                 )
             finally:
                 api.CloseHandle(handle)

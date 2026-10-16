@@ -29,6 +29,10 @@ reuse production executor/identity/control paths with mock streams. Select them 
 unittest, not the production provider catalog; passing fixtures are not native evidence.
 The saved user-run -02 pair separately verifies one bounded native resume positive.
 
+[Unknown-SID diagnostic](docs/UNKNOWN_SID_DIAGNOSTIC.md) adds opt-in exact pinned-literal
+tagging only for the closed one-slot preparation. No native negative is promoted, and
+ambiguous errors stay inconclusive; no raw stderr/SID is exported by the tag.
+
 Live tasks require `task run --file task.md --allow-live --max-turns N --max-budget-usd B`,
 positive wall timeout and explicit auth-profile prerequisites. Do not run this as a setup check.
 One explicitly authorized subscription text baseline completed with two passing assertions; see umbrella docs/research/SUBSCRIPTION_BASELINE_2026-10-14.md. Further live calls need new authorization. Default `text-only-v1` disables every tool. Optional `--agent read-only-v1 --workspace

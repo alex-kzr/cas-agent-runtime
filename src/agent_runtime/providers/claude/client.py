@@ -33,6 +33,7 @@ from agent_runtime.providers.claude.context import (
     context_observation,
 )
 from agent_runtime.providers.claude.permissions import read_allowed
+from agent_runtime.providers.claude.resume_diagnostics import SCENARIO, observe_rejection
 from agent_runtime.tasks.executor import NativeResult
 from agent_runtime.tasks.models import ExecutionRequest, sdk_succeeded
 from agent_runtime.telemetry.events import observe_message
@@ -220,7 +221,8 @@ class ClaudeAdapter:
             max_budget_usd=float(request.limits.max_budget_usd),
             env=environment,
             include_partial_messages=True,
-            stderr=lambda _: None,
+            stderr=(lambda line: observe_rejection(request, recorder, [line], "stderr"))
+            if request.scenario_id == SCENARIO else (lambda _: None),
         )
 
     async def run(self, request: ExecutionRequest, recorder: Recorder) -> NativeResult:
@@ -283,6 +285,8 @@ class ClaudeAdapter:
                 if not isinstance(message, ResultMessage):
                     observe_session_identity(message, request, recorder)
                 if isinstance(message, ResultMessage):
+                    if message.is_error:
+                        observe_rejection(request, recorder, getattr(message, "errors", None), "result-errors")
                     result = NativeResult(
                         message.result,
                         {
