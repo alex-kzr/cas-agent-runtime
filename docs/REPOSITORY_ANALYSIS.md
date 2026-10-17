@@ -47,3 +47,37 @@ schemas, existing Executor code or runtime CLI defaults changed.
 Future live analysis requires a separately approved input allowlist/workspace snapshot,
 new model/prompt/limit/auth/transport scope and independent live result validation.
 There is no live switch in this profile; earlier consumed approvals cannot enable it.
+
+
+## Default-closed SDK path (mock verified)
+
+The same analysis page now accepts explicit nonempty checkbox selection of the two
+allowlisted Tiny Shop files. Preparation captures only selected synthetic bytes with
+per-file and combined SHA-256. Paths, links, duplicates, changed content and files over
+8 KiB are rejected; aggregate source limit is 16 KiB. No arbitrary repository path or
+upload is accepted. Legacy offline create/start requests remain supported.
+
+Choose SDK payload preview, prepare a draft, then Review SDK payload. The literal
+query, fixed model, recipient and limits are displayed with two fresh unchecked
+consents. SDK Start remains disabled while the source gate is false; the backend
+rejects even crafted consent requests before run claims or provider construction.
+There is no CLI/environment/API switch that activates it.
+
+SnapshotSDKAdapter delegates to the existing SupervisedClaudeAdapter and Executor.
+One query/turn, USD 0.02 SDK threshold, 30-second executor timeout, text-only tools
+and empty SDK workspace are enforced. One SDK attempt is consumed per dedicated
+analysis directory. Strict bounded JSON parsing and independent heading/AST, path,
+line/hash/coverage checks decide report acceptance. Native success alone is insufficient.
+Accepted reports/checkpoints and selected sources survive restart and export as ZIP.
+Mock reports explicitly identify mock provenance and zero real model requests.
+
+Stop uses actual local task cancellation and existing owned-process cleanup. CANCELLED
+requires confirmed empty cleanup; unknown cleanup/timeout is INTERRUPTED. Neither
+status proves provider cancellation or stopped billing. Invalid reports and raw SDK
+errors are not published as accepted reports; public errors use safe codes. Source
+snapshots are revalidated before checkpoint/export. No replay or retry is automatic.
+
+Live/native/auth behavior has not been exercised for this path. The single future
+scope and fresh-session review handoff live in the umbrella
+`docs/review/REPOSITORY_ANALYSIS_SDK_2026-10-17.md`. Keep the gate closed pending that
+review and separate explicit approval. No new framework/dependency is introduced.

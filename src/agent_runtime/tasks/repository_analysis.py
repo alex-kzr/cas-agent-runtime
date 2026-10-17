@@ -1,4 +1,4 @@
-"""Owned read-only sample analysis through Executor; no native/model execution path."""
+"""Owned synthetic analysis through Executor, with a default-closed SDK path."""
 
 import ast
 import asyncio
@@ -47,16 +47,35 @@ def guarded(path):
     return path
 
 
-def read_sources(directory):
+def selected_files(names=None):
+    names = list(SAMPLE) if names is None else names
+    if (
+        type(names) is not list
+        or not names
+        or any(type(n) is not str or n not in SAMPLE for n in names)
+        or len(names) != len(set(names))
+    ):
+        raise ValueError("Select unique allowlisted sample files")
+    return sorted(names)
+
+
+def read_sources(directory, names=None, *, exact=True):
+    names = selected_files(names)
     directory = guarded(directory)
-    if {p.name for p in directory.iterdir()} != set(SAMPLE):
-        raise ValueError("Only the two approved sample files may exist")
+    if exact and {p.name for p in directory.iterdir()} != set(names):
+        raise ValueError("Only selected approved sample files may exist")
     result = {}
-    for name in SAMPLE:
+    for name in names:
         path = guarded(directory / name)
         if not path.is_file() or path.stat().st_size > 8192:
             raise ValueError("Source unavailable or too large")
-        result[name] = path.read_bytes().decode("utf-8")
+        with path.open("rb") as stream:
+            content = stream.read(8193)
+        if len(content) > 8192:
+            raise ValueError("Source too large")
+        result[name] = content.decode("utf-8")
+    if sum(len(v.encode("utf-8")) for v in result.values()) > 16384:
+        raise ValueError("Snapshot too large")
     return result
 
 
@@ -92,14 +111,20 @@ def expected_fixture_output():
 
 def validate_report(value, sources):
     """Require exact source-grounded facts, coverage, identity, line and content hash."""
-    if set(sources) != set(SAMPLE) or any(
-        type(v) is not str or len(v.encode()) > 8192 for v in sources.values()
+    if (
+        not sources
+        or not set(sources).issubset(SAMPLE)
+        or any(type(v) is not str or len(v.encode()) > 8192 for v in sources.values())
     ):
         raise ValueError("Invalid approved sources")
-    tree = ast.parse(sources["inventory.py"])
-    expected = {
-        "project": ("README.md", 1, sources["README.md"].splitlines()[0].removeprefix("# "))
-    }
+    tree = ast.parse(sources.get("inventory.py", ""))
+    expected = {}
+    if "README.md" in sources:
+        expected["project"] = (
+            "README.md",
+            1,
+            sources["README.md"].splitlines()[0].removeprefix("# "),
+        )
     for function in tree.body:
         if (
             not isinstance(function, ast.FunctionDef)
@@ -140,12 +165,16 @@ def validate_report(value, sources):
     return value["claims"]
 
 
-def markdown(value, sources, run_id):
+def markdown(value, sources, run_id, *, mode="offline"):
     claims = validate_report(value, sources)
     lines = [
         "# Tiny Shop repository analysis",
         "",
-        "Offline scripted sample; no model request.",
+        {
+            "offline": "Offline scripted sample; no model request.",
+            "mock-sdk": "Mock SDK test only; no real model request.",
+            "sdk": "SDK response validated against selected synthetic snapshots.",
+        }[mode],
         "",
         f"CAS run: {identity(run_id)}",
         "",
@@ -171,7 +200,7 @@ class SampleAdapter:
         cleanup = {"mechanism": "in-process-no-children", "tree_empty": True, "forced": False}
         recorder.record["configuration"].update(analysis_profile=PROFILE, model_requests=0)
         try:
-            if read_sources(request.workspace) != self.snapshot:
+            if read_sources(request.workspace, list(self.snapshot), exact=False) != self.snapshot:
                 raise ValueError("Approved source changed before execution")
             recorder.event(
                 "analysis.sources",
@@ -185,10 +214,15 @@ class SampleAdapter:
             value = (
                 await self.producer(self.snapshot, self.question)
                 if self.producer
-                else expected_fixture_output()
+                else {
+                    "repository": "tiny-shop",
+                    "claims": [
+                        c for c in expected_fixture_output()["claims"] if c["file"] in self.snapshot
+                    ],
+                }
             )
             validate_report(value, self.snapshot)
-            if read_sources(request.workspace) != self.snapshot:
+            if read_sources(request.workspace, list(self.snapshot), exact=False) != self.snapshot:
                 raise ValueError("Read-only source changed during execution")
             self.report = value
             self.on_report(value)
@@ -225,7 +259,7 @@ class SampleAdapter:
 class AnalysisControl:
     """One local Executor operation at a time; reload/restart never replays a claim."""
 
-    def __init__(self, data_dir, *, producer=None):
+    def __init__(self, data_dir, *, producer=None, supervised_factory=None):
         self.root = guarded(data_dir)
         marker = self.root / "analysis-profile.json"
         if self.root.exists():
@@ -245,6 +279,7 @@ class AnalysisControl:
         self.lock = threading.RLock()
         self.thread, self.loop, self.execution, self.active = None, None, None, None
         self.producer, self.closing = producer, False
+        self.supervised_factory = supervised_factory
         self.workspace = guarded(self.root / "workspaces/tiny-shop")
         try:
             if not self.workspace.exists():
@@ -325,6 +360,9 @@ class AnalysisControl:
                 "report",
                 "error",
                 "recovery",
+                "files",
+                "mode",
+                "snapshot_sha256",
             }
             or not {
                 "job_id",
@@ -337,7 +375,8 @@ class AnalysisControl:
                 "report",
             }.issubset(job)
             or job.get("job_id") != job_id
-            or job.get("profile") != PROFILE
+            or job.get("profile")
+            != ("repository-analysis-sdk-v1" if job.get("mode") == "sdk" else PROFILE)
             or job.get("repository") != "tiny-shop"
             or type(job.get("question")) is not str
             or job.get("question") not in QUESTIONS
@@ -356,6 +395,16 @@ class AnalysisControl:
             raise ValueError("Invalid analysis record")
         if job["run_id"] is not None:
             identity(job["run_id"])
+        selected_files(job.get("files"))
+        if job.get("mode", "offline") not in {"offline", "sdk"}:
+            raise ValueError("Invalid analysis mode")
+        if job.get("mode") == "sdk" and (
+            not job.get("files")
+            or type(job.get("snapshot_sha256")) is not str
+            or len(job["snapshot_sha256"]) != 64
+            or any(c not in "0123456789abcdef" for c in job["snapshot_sha256"])
+        ):
+            raise ValueError("SDK records require explicit selected snapshot identity")
         return job
 
     def save(self, job):
@@ -368,7 +417,7 @@ class AnalysisControl:
                 raise ValueError("Analysis capacity reached")
             return [self.load(path.stem) for path in sorted(paths)]
 
-    def create(self, repository, question):
+    def create(self, repository, question, files=None, mode="offline"):
         with self.lock:
             if (
                 repository != "tiny-shop"
@@ -378,37 +427,68 @@ class AnalysisControl:
                 or len(self.list()) >= 100
             ):
                 raise ValueError("Select an approved repository/question")
+            from agent_runtime.tasks.repository_analysis_sdk import checked_sources, snapshot_digest
+
+            names = selected_files(files)
+            if mode not in {"offline", "sdk"}:
+                raise ValueError("Unsupported mode")
+            source = checked_sources(read_sources(self.workspace, names, exact=False))
             job = {
                 "job_id": str(uuid4()),
-                "profile": PROFILE,
+                "profile": "repository-analysis-sdk-v1" if mode == "sdk" else PROFILE,
                 "repository": repository,
                 "question": question,
                 "status": "DRAFT",
                 "run_id": None,
                 "created_at": now(),
                 "report": None,
+                "files": names,
+                "mode": mode,
+                "snapshot_sha256": snapshot_digest(source),
             }
-            self.save(job)
-            return job
-
-    def start(self, job_id):
-        with self.lock:
-            job = self.load(job_id)
-            if self.active or self.closing or job["status"] != "DRAFT":
-                raise ValueError("Only a fresh draft can start; no queue or replay")
-            source = read_sources(self.workspace)
-            if source != SAMPLE:
-                raise ValueError("Approved source changed")
-            claim = guarded(self.directory / (job_id + ".started"))
-            run_id = str(uuid4())
-            with claim.open("x", encoding="ascii") as stream:
-                stream.write(run_id)
-            job.update(status="STARTING", run_id=run_id)
-            snapshots = guarded(self.directory / job_id / "files")
+            snapshots = guarded(self.directory / job["job_id"] / "files")
             snapshots.mkdir(parents=True, exist_ok=False)
             for name, content in source.items():
                 with (snapshots / name).open("x", encoding="utf-8", newline="\n") as stream:
                     stream.write(content)
+            self.save(job)
+            return job
+
+    def start(self, job_id, *, allow_live=False, allow_existing_login=False, snapshot_sha256=None):
+        with self.lock:
+            job = self.load(job_id)
+            if self.active or self.closing or job["status"] != "DRAFT":
+                raise ValueError("Only a fresh draft can start; no queue or replay")
+            from agent_runtime.tasks.repository_analysis_sdk import require_release
+
+            sdk = job.get("mode") == "sdk"
+            if sdk:
+                require_release()
+                if (
+                    allow_live is not True
+                    or allow_existing_login is not True
+                    or snapshot_sha256 != job.get("snapshot_sha256")
+                ):
+                    raise PermissionError("Fresh consents and exact snapshot digest required")
+            source = self.sources(job_id) if job.get("files") else read_sources(self.workspace)
+            if read_sources(self.workspace, list(source), exact=False) != source:
+                raise ValueError("Approved source changed")
+            claim = guarded(self.directory / (job_id + ".started"))
+            run_id = str(uuid4())
+            if sdk:
+                with guarded(self.directory / "sdk-attempt.started").open(
+                    "x", encoding="ascii"
+                ) as stream:
+                    stream.write(run_id)
+            with claim.open("x", encoding="ascii") as stream:
+                stream.write(run_id)
+            job.update(status="STARTING", run_id=run_id)
+            snapshots = guarded(self.directory / job_id / "files")
+            if not job.get("files"):
+                snapshots.mkdir(parents=True, exist_ok=False)
+                for name, content in source.items():
+                    with (snapshots / name).open("x", encoding="utf-8", newline="\n") as stream:
+                        stream.write(content)
             self.save(job)
             self.active = job_id
             self.thread = threading.Thread(target=self._execute, args=(job, source), daemon=True)
@@ -420,6 +500,8 @@ class AnalysisControl:
         try:
 
             def persist(value):
+                if self.sources(job["job_id"]) != source:
+                    raise ValueError("Snapshot changed")
                 atomic_json(
                     guarded(self.directory / job["job_id"] / "validated-report.json"),
                     {"run_id": job["run_id"], "report": value},
@@ -435,6 +517,35 @@ class AnalysisControl:
                 agent_name="read-only-v1",
                 run_id=job["run_id"],
             )
+            if job.get("mode") == "sdk":
+                from agent_runtime.tasks.repository_analysis_sdk import (
+                    LIMITS,
+                    MODEL,
+                    SnapshotSDKAdapter,
+                    query_text,
+                )
+
+                adapter = SnapshotSDKAdapter(
+                    source,
+                    job["question"],
+                    persist,
+                    supervised_factory=self.supervised_factory,
+                    environment={} if self.supervised_factory is not None else None,
+                )
+                workspace = guarded(self.root / "workspaces" / ("sdk-" + job["run_id"]))
+                workspace.mkdir(exist_ok=False)
+                request = ExecutionRequest(
+                    "scenario",
+                    query_text(source, job["question"]),
+                    workspace,
+                    LIMITS,
+                    "sdk.repository-analysis",
+                    model=MODEL,
+                    live_authorized=True,
+                    allow_existing_login=True,
+                    agent_name="text-only-v1",
+                    run_id=job["run_id"],
+                )
             with self.lock:
                 if self.closing:
                     raise ValueError("Controller closed before execution")
@@ -480,24 +591,82 @@ class AnalysisControl:
             raise ValueError("Run too large")
         record = json.loads(path.read_text(encoding="utf-8"))
         validate_document("run", record)
+        sdk = job.get("mode") == "sdk"
         if (
             record["run_id"] != job["run_id"]
-            or record["scenario_id"] != "platform.repository-analysis"
-            or record["provider"]["name"] != "local-validation"
-            or record["configuration"].get("execution_mode") != "offline"
-            or record["workspace"] != str(self.workspace.resolve())
+            or record["scenario_id"]
+            != ("sdk.repository-analysis" if sdk else "platform.repository-analysis")
+            or record["provider"]["name"] != ("claude" if sdk else "local-validation")
+            or record["configuration"].get("execution_mode") != ("sdk" if sdk else "offline")
+            or record["workspace"]
+            != str(
+                (
+                    self.root / "workspaces" / ("sdk-" + job["run_id"]) if sdk else self.workspace
+                ).resolve()
+            )
         ):
             raise ValueError("Analysis run identity differs")
+        if sdk:
+            from dataclasses import asdict
+
+            from agent_runtime.tasks.models import sdk_succeeded
+            from agent_runtime.tasks.repository_analysis_sdk import LIMITS, MODEL
+
+            if (
+                record["configuration"].get("snapshot_sha256") != job["snapshot_sha256"]
+                or record["provider"]["requested_model"] != MODEL
+                or record["limits"] != asdict(LIMITS)
+            ):
+                raise ValueError("SDK scope identity differs")
+            if record["status"] == "COMPLETED":
+                application = record["usage"].get("application") or {}
+                if (
+                    not sdk_succeeded(record["sdk_outcome"])
+                    or application.get("model_requests") != 1
+                    or (application.get("cleanup") or {}).get("tree_empty") is not True
+                ):
+                    raise ValueError("SDK completion evidence is incomplete")
         return record
 
     def sources(self, job_id):
         job = self.load(job_id)
-        if job["run_id"] is None:
+        if job["run_id"] is None and not job.get("files"):
             raise ValueError("No source snapshot yet")
-        source = read_sources(self.directory / identity(job_id) / "files")
-        if source != SAMPLE:
-            raise ValueError("Source snapshot hash mismatch")
+        from agent_runtime.tasks.repository_analysis_sdk import checked_sources, snapshot_digest
+
+        source = checked_sources(
+            read_sources(self.directory / identity(job_id) / "files", job.get("files"))
+        )
+        if job.get("snapshot_sha256") and snapshot_digest(source) != job["snapshot_sha256"]:
+            raise ValueError("Source snapshot digest mismatch")
         return source
+
+    def preview(self, job_id):
+        from dataclasses import asdict
+
+        from agent_runtime.tasks.repository_analysis_sdk import (
+            LIMITS,
+            LIVE_ANALYSIS_ENABLED,
+            MODEL,
+            build_payload,
+            query_text,
+        )
+
+        job = self.load(job_id)
+        sources = self.sources(job_id)
+        query = query_text(sources, job["question"])
+        return {
+            "payload": build_payload(sources, job["question"]),
+            "query_text": query,
+            "query_sha256": sha(query),
+            "snapshot_sha256": job.get("snapshot_sha256"),
+            "model": MODEL,
+            "recipient": "Anthropic via existing claude.ai subscription",
+            "limits": asdict(LIMITS),
+            "live_enabled": LIVE_ANALYSIS_ENABLED,
+            "tools": [],
+            "one_attempt_per_data_directory": True,
+        }
 
     def report(self, job_id):
         job = self.load(job_id)
@@ -505,12 +674,16 @@ class AnalysisControl:
             raise ValueError("No validated completed report")
         source = self.sources(job_id)
         validate_report(job["report"], source)
+        application = self.canonical(job)["usage"].get("application") or {}
+        mode = "mock-sdk" if application.get("mock_sdk_test_only") else job.get("mode", "offline")
         return {
             "run_id": job["run_id"],
-            "profile": PROFILE,
-            "model_requests": 0,
+            "profile": "repository-analysis-sdk-v1" if mode != "offline" else PROFILE,
+            "mode": mode,
+            "model_requests": application.get("model_requests", 0),
+            "real_model_requests": 0 if mode in {"offline", "mock-sdk"} else None,
             "report": job["report"],
-            "markdown": markdown(job["report"], source, job["run_id"]),
+            "markdown": markdown(job["report"], source, job["run_id"], mode=mode),
         }
 
     def bundle(self, job_id):
