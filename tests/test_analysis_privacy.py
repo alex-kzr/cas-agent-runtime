@@ -10,13 +10,6 @@ from contextlib import ExitStack
 from pathlib import Path
 from unittest.mock import patch
 
-from agent_runtime.providers.claude import worker
-from agent_runtime.providers.claude.client import ClaudeAdapter
-from agent_runtime.providers.claude.supervised import SupervisedClaudeAdapter
-from agent_runtime.tasks import analysis_privacy as privacy
-from agent_runtime.tasks import repository_analysis_sdk as sdk
-from agent_runtime.tasks.executor import NativeResult
-from agent_runtime.tasks.repository_analysis import SAMPLE, AnalysisControl, expected_fixture_output
 from claude_agent_sdk import (
     AssistantMessage,
     ResultMessage,
@@ -25,6 +18,14 @@ from claude_agent_sdk import (
     ToolUseBlock,
     UserMessage,
 )
+
+from agent_runtime.providers.claude import worker
+from agent_runtime.providers.claude.client import ClaudeAdapter
+from agent_runtime.providers.claude.supervised import SupervisedClaudeAdapter
+from agent_runtime.tasks import analysis_privacy as privacy
+from agent_runtime.tasks import repository_analysis_sdk as sdk
+from agent_runtime.tasks.executor import NativeResult
+from agent_runtime.tasks.repository_analysis import SAMPLE, AnalysisControl, expected_fixture_output
 
 # Token-shaped on purpose: a shape filter alone must not be what keeps it out.
 CANARY = "RAWCANARY-9f2c41"

@@ -3,11 +3,12 @@ import unittest
 from pathlib import Path
 from unittest.mock import patch
 
+from claude_agent_sdk import AssistantMessage, ResultMessage
+
 from agent_runtime.providers.claude.client import ClaudeAdapter
 from agent_runtime.tasks.executor import Executor
 from agent_runtime.tasks.models import ExecutionRequest, Limits
 from agent_runtime.telemetry.recorder import Recorder
-from claude_agent_sdk import AssistantMessage, ResultMessage
 
 
 class AdapterTests(unittest.IsolatedAsyncioTestCase):

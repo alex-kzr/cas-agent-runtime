@@ -244,8 +244,9 @@ class SDKLifecycleTests(unittest.TestCase):
         self.assertEqual(job["status"], "INTERRUPTED")
 
     def test_pinned_sdk_client_contract_with_mock_stream_and_mock_auth_only(self):
-        from agent_runtime.providers.claude.client import ClaudeAdapter
         from claude_agent_sdk import ResultMessage
+
+        from agent_runtime.providers.claude.client import ClaudeAdapter
 
         prompts = []
 
