@@ -34,6 +34,7 @@ from agent_runtime.providers.claude.context import (
 )
 from agent_runtime.providers.claude.permissions import read_allowed
 from agent_runtime.providers.claude.resume_diagnostics import SCENARIO, observe_rejection
+from agent_runtime.tasks import analysis_privacy
 from agent_runtime.tasks.executor import NativeResult
 from agent_runtime.tasks.models import ExecutionRequest, sdk_succeeded
 from agent_runtime.telemetry.events import observe_message
@@ -222,7 +223,8 @@ class ClaudeAdapter:
             env=environment,
             include_partial_messages=True,
             stderr=(lambda line: observe_rejection(request, recorder, [line], "stderr"))
-            if request.scenario_id == SCENARIO else (lambda _: None),
+            if request.scenario_id == SCENARIO
+            else (lambda _: None),
         )
 
     async def run(self, request: ExecutionRequest, recorder: Recorder) -> NativeResult:
@@ -274,8 +276,13 @@ class ClaudeAdapter:
                 if context is not None:
                     recorder.event("context.observed", context, "sdk")
                 observe_message(message, recorder, observed_usage)
+                # Analysis: bounded metadata is built here, before anything is serialized.
                 payload = (
-                    asdict(message) if is_dataclass(message) else {"type": type(message).__name__}
+                    analysis_privacy.message_summary(message)
+                    if getattr(recorder, "private", False) is True
+                    else asdict(message)
+                    if is_dataclass(message)
+                    else {"type": type(message).__name__}
                 )
                 recorder.event(
                     "sdk.message",
@@ -286,7 +293,9 @@ class ClaudeAdapter:
                     observe_session_identity(message, request, recorder)
                 if isinstance(message, ResultMessage):
                     if message.is_error:
-                        observe_rejection(request, recorder, getattr(message, "errors", None), "result-errors")
+                        observe_rejection(
+                            request, recorder, getattr(message, "errors", None), "result-errors"
+                        )
                     result = NativeResult(
                         message.result,
                         {

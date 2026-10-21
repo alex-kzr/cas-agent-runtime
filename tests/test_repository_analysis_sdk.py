@@ -320,6 +320,30 @@ class SDKLifecycleTests(unittest.TestCase):
             (options.model, options.max_turns, options.max_budget_usd), (sdk.MODEL, 1, 0.02)
         )
 
+    def test_adapter_refuses_a_recorder_without_the_privacy_policy(self):
+        from types import SimpleNamespace
+
+        adapter = sdk.SnapshotSDKAdapter(SAMPLE, "overview", supervised_factory=transport())
+        recorder = SimpleNamespace(record={"configuration": {}}, private=False)
+        request = SimpleNamespace(
+            live_authorized=True,
+            allow_existing_login=True,
+            auth_mode="subscription",
+            model=sdk.MODEL,
+            limits=sdk.LIMITS,
+            agent_name="text-only-v1",
+            resume_session_id=None,
+            instructions=sdk.query_text(adapter.sources, "overview"),
+            workspace=Path(self.temp.name),
+        )
+        with (
+            patch.object(sdk, "LIVE_ANALYSIS_ENABLED", True),
+            patch.object(sdk, "guarded", return_value=Path(self.temp.name)),
+            patch.object(Path, "iterdir", return_value=iter(())),
+            self.assertRaises(PermissionError),
+        ):
+            asyncio.run(adapter.run(request, recorder))
+
     def test_timeout_keeps_interrupted_without_accepted_report(self):
         self.control.close()
         self.control = AnalysisControl(

@@ -7,6 +7,7 @@ from dataclasses import asdict
 
 from agent_runtime.providers.claude.auth import auth_environment, require_auth
 from agent_runtime.providers.claude.supervision import OwnedProcess
+from agent_runtime.tasks import analysis_privacy
 from agent_runtime.tasks.executor import NativeResult
 from agent_runtime.tasks.models import WorkerCleanupError, sdk_succeeded, validate_document
 from agent_runtime.telemetry.recorder import read_events
@@ -85,6 +86,13 @@ class SupervisedClaudeAdapter:
         if code != 0 or response.get("error") or not isinstance(response.get("result"), dict):
             raise RuntimeError("SDK worker failed; inspect retained partial native evidence")
         native = dict(response["result"])
+        if getattr(recorder, "private", False) is True:
+            # Independent parent-side projection: never trust the worker file as already safe.
+            fields = {
+                name: native.get(name)
+                for name in ("text", "outcome", "session_id", "usage", "application_usage")
+            }
+            native = analysis_privacy.worker_result(NativeResult(**fields), request.instructions)
         if request.scenario_id == "sdk.fundamentals":
             checks = native.get("checks")
             if (

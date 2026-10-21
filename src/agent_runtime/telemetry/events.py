@@ -10,6 +10,7 @@ from claude_agent_sdk import (
     UserMessage,
 )
 
+from agent_runtime.tasks import analysis_privacy
 from agent_runtime.telemetry.metrics import ObservedUsage
 
 
@@ -64,7 +65,11 @@ def observe_message(message, recorder, usage: ObservedUsage) -> None:
                 "sdk",
             )
         else:
-            recorder.record["provider"]["resolved_model"] = message.model
+            recorder.record["provider"]["resolved_model"] = (
+                analysis_privacy.model_id(message.model)
+                if getattr(recorder, "private", False) is True
+                else message.model
+            )
         usage.observe(message.message_id, message.usage, subagent=bool(message.parent_tool_use_id))
         recorder.record["usage"]["application"] = usage.snapshot()
         for block in message.content:

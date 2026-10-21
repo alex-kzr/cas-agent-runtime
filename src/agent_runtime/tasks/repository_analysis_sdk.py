@@ -135,6 +135,8 @@ class SnapshotSDKAdapter:
             raise PermissionError("Analysis SDK request differs from the bounded scope")
         if not guarded(request.workspace).is_dir() or any(request.workspace.iterdir()):
             raise PermissionError("SDK workspace must be isolated and empty")
+        if getattr(recorder, "private", False) is not True:
+            raise PermissionError("Analysis privacy policy is not active for this recorder")
         original = recorder.event
         queries = 0
 

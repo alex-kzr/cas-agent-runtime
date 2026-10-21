@@ -15,6 +15,7 @@ from pathlib import Path
 from typing import Any
 from uuid import uuid4
 
+from agent_runtime.tasks import analysis_privacy
 from agent_runtime.tasks.models import (
     TERMINAL,
     ExecutionRequest,
@@ -138,9 +139,13 @@ class RunLock:
 
 
 class Recorder:
+    # Analysis runs project every event/document through an allowlist before any write.
+    private = False
+
     def __init__(
         self, data_dir: Path, request: ExecutionRequest, secrets=(), *, local: bool = False
     ):
+        self.private = analysis_privacy.enabled(request.scenario_id)
         self.data_dir = data_dir
         self.secrets = tuple(secrets)
         self.run_id = request.run_id or str(uuid4())
@@ -217,6 +222,8 @@ class Recorder:
                 "instructions_truncated": len(request.instructions.encode("utf-8")) > 16_384,
             }
         )
+        if self.private:
+            source = analysis_privacy.task_source(source)
         validate_document("task", source)
         atomic_json(data_dir / instructions_ref, source)
         self.save()
@@ -227,6 +234,8 @@ class Recorder:
 
     def clean_document(self, value: dict[str, Any]) -> dict[str, Any]:
         """Keep the trusted schema skeleton; bound/redact each untrusted value separately."""
+        if self.private:
+            value = analysis_privacy.document(value)
         result = {key: self.clean(item) for key, item in value.items()}
         for field in ("provider", "usage"):
             if isinstance(value.get(field), dict):
@@ -239,6 +248,8 @@ class Recorder:
         atomic_json(self.directory / "run.json", clean)
 
     def event(self, event_type: str, payload: dict[str, Any], source: str = "application") -> None:
+        if self.private:
+            payload = analysis_privacy.event(event_type, payload)
         self.seq += 1
         event = {
             "schema_version": 1,

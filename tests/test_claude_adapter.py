@@ -3,12 +3,11 @@ import unittest
 from pathlib import Path
 from unittest.mock import patch
 
-from claude_agent_sdk import AssistantMessage, ResultMessage
-
 from agent_runtime.providers.claude.client import ClaudeAdapter
 from agent_runtime.tasks.executor import Executor
 from agent_runtime.tasks.models import ExecutionRequest, Limits
 from agent_runtime.telemetry.recorder import Recorder
+from claude_agent_sdk import AssistantMessage, ResultMessage
 
 
 class AdapterTests(unittest.IsolatedAsyncioTestCase):
@@ -158,6 +157,50 @@ class AdapterTests(unittest.IsolatedAsyncioTestCase):
             )
             self.assertEqual(run["usage"]["sdk"]["total_cost_usd"], 0.123)
             self.assertTrue(run["sdk_outcome"]["is_error"])
+
+    async def test_non_analysis_sdk_messages_keep_the_full_native_payload(self):
+        class PlainStream:
+            async def __aenter__(self):
+                return self
+
+            async def __aexit__(self, *args):
+                return False
+
+            async def query(self, prompt):
+                pass
+
+            async def receive_response(self):
+                yield ResultMessage(
+                    subtype="success",
+                    duration_ms=1,
+                    duration_api_ms=1,
+                    is_error=False,
+                    num_turns=1,
+                    session_id="fixture-session",
+                    result="PLAIN-NATIVE-RESULT",
+                    terminal_reason="completed",
+                )
+
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            # Executor only permits workspaces below root/workspaces.
+            request = ExecutionRequest(
+                "task",
+                "fixture",
+                root / "workspaces/one",
+                Limits(2, "0.1", 5),
+                live_authorized=True,
+                auth_mode="api",
+            )
+            with patch(
+                "agent_runtime.providers.claude.client.ClaudeSDKClient", return_value=PlainStream()
+            ):
+                run = await Executor(
+                    root, ClaudeAdapter({"ANTHROPIC_API_KEY": "synthetic-not-real"})
+                ).execute(request)
+            events = (root / "runs" / run["run_id"] / "events.jsonl").read_text()
+            self.assertIn("PLAIN-NATIVE-RESULT", events)
+            self.assertEqual(run["status"], "COMPLETED")
 
     def request(self, root, authorized=False):
         return ExecutionRequest(

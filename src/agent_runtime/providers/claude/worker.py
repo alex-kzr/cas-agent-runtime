@@ -8,9 +8,14 @@ from dataclasses import asdict
 from pathlib import Path
 
 
-def bounded_result(result, recorder):
+def bounded_result(result, recorder, instructions=None):
     if result is None:
         return None
+    if getattr(recorder, "private", False) is True:
+        # Analysis: only a validated source-grounded report or no text reaches disk.
+        from agent_runtime.tasks import analysis_privacy
+
+        return analysis_privacy.worker_result(result, instructions)
     values = {key: recorder.clean(value) for key, value in asdict(result).items()}
     if result.checks is not None:
         values["checks"] = [recorder.clean_document(check) for check in result.checks]
@@ -43,17 +48,26 @@ def main():
     recorder.task_id = recorder.record["task_id"]
     recorder.seq = payload["seq"]
     recorder.secrets = (os.environ["ANTHROPIC_API_KEY"],) if request.auth_mode == "api" else ()
+    from agent_runtime.tasks import analysis_privacy
+
+    recorder.private = analysis_privacy.enabled(request.scenario_id)
     result = None
     error = None
     try:
         result = asyncio.run(ClaudeAdapter(os.environ).run(request, recorder))
     except Exception as exception:
-        error = {"type": type(exception).__name__, "message": recorder.clean(str(exception))}
+        # Analysis: exception text may carry provider content; keep the type name only.
+        error = {
+            "type": type(exception).__name__,
+            "message": analysis_privacy.WITHHELD
+            if recorder.private
+            else recorder.clean(str(exception)),
+        }
     finally:
         recorder.save()
         atomic_json(
             directory / "response.json",
-            {"result": bounded_result(result, recorder), "error": error},
+            {"result": bounded_result(result, recorder, request.instructions), "error": error},
         )
     return 0 if error is None else 1
 

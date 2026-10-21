@@ -61,6 +61,43 @@ class RecorderTests(unittest.TestCase):
         self.assertLessEqual(len(lines[-1]), 65536)
         self.assertIn(b"truncated", lines[-1].lower())
 
+    def test_non_analysis_events_keep_their_full_payload(self):
+        writer = Recorder(self.root, self.request())
+        self.assertFalse(writer.private)
+        writer.event("sdk.message", {"message": {"result": "PLAIN-RESULT"}}, "sdk")
+        text = (writer.directory / "events.jsonl").read_text()
+        self.assertIn("PLAIN-RESULT", text)
+        source = json.loads((self.root / writer.record["instructions_ref"]).read_text())
+        self.assertEqual(source["instructions"], "test")
+
+    def test_analysis_recorder_projects_events_and_withholds_instructions(self):
+        request = ExecutionRequest(
+            "scenario",
+            "SNAPSHOT-TEXT",
+            self.root / "workspace",
+            Limits(1, "0.02", 5),
+            "sdk.repository-analysis",
+        )
+        writer = Recorder(self.root, request)
+        self.assertTrue(writer.private)
+        writer.event("sdk.message", {"message_type": "ResultMessage", "message": {"result": "X"}})
+        writer.record["sdk_outcome"] = {
+            "subtype": "success",
+            "is_error": False,
+            "terminal_reason": "q r",
+        }
+        writer.save()
+        writer.event("error", {"category": "sdk", "code": "E", "message": "RAW-ERROR-TEXT"})
+        combined = (
+            (writer.directory / "events.jsonl").read_text()
+            + (self.root / writer.record["instructions_ref"]).read_text()
+            + (writer.directory / "run.json").read_text()
+        )
+        for raw in ("SNAPSHOT-TEXT", "RAW-ERROR-TEXT", '"result"'):
+            self.assertNotIn(raw, combined)
+        run = json.loads((writer.directory / "run.json").read_text())
+        self.assertEqual(run["sdk_outcome"]["terminal_reason"], "other")
+
     def test_global_lock_rejects_concurrent_execution(self):
         with RunLock(self.root):
             with self.assertRaises(RuntimeError), RunLock(self.root):
