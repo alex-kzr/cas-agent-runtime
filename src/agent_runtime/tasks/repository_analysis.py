@@ -522,8 +522,9 @@ class AnalysisControl:
             return job
 
     def _execute(self, job, source):
-        loop = asyncio.new_event_loop()
+        loop = None
         try:
+            loop = asyncio.new_event_loop()
 
             def persist(value):
                 if self.sources(job["job_id"]) != source:
@@ -587,13 +588,23 @@ class AnalysisControl:
                 )
                 self.save(job)
         except Exception:
-            with self.lock:
-                job.update(status="FAILED", error="Local analysis failed; no replay")
-                self.save(job)
+            try:
+                with self.lock:
+                    job.update(status="FAILED", error="Local analysis failed; no replay")
+                    self.save(job)
+            # Intentional: never log raw exception text; status persistence is best effort.
+            except Exception:  # noqa: S110
+                pass
         finally:
-            loop.close()
-            with self.lock:
-                self.active, self.loop, self.execution = None, None, None
+            try:
+                if loop is not None:
+                    loop.close()
+            # Intentional: close failure must not block the ownership reset below.
+            except Exception:  # noqa: S110
+                pass
+            finally:
+                with self.lock:
+                    self.active, self.loop, self.execution = None, None, None
 
     def stop(self, job_id):
         with self.lock:

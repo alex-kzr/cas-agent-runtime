@@ -98,6 +98,71 @@ class AnalysisLifecycleTests(unittest.TestCase):
         with self.assertRaises(ValueError):
             self.control.report(job["job_id"])
 
+    def assert_failed_before_execution(self, job_id, producer_calls):
+        self.control.thread.join(5)
+        self.assertFalse(self.control.thread.is_alive())
+        job = self.control.load(job_id)
+        self.assertEqual(job["status"], "FAILED")
+        self.assertEqual(job["error"], "Local analysis failed; no replay")
+        self.assertIsNone(job["report"])
+        self.assertIsNone(self.control.active)
+        self.assertIsNone(self.control.loop)
+        self.assertIsNone(self.control.execution)
+        self.assertEqual(producer_calls, [])
+        self.assertFalse((self.root / "runs").exists() and any((self.root / "runs").iterdir()))
+        with self.assertRaises(ValueError):
+            self.control.report(job_id)
+        self.assertTrue((self.control.directory / (job_id + ".started")).exists())
+        with self.assertRaises(ValueError):
+            self.control.start(job_id)
+
+    def test_event_loop_construction_failure_is_terminal_and_clears_ownership(self):
+        calls = []
+
+        async def producer(source, question):
+            calls.append(question)
+            return expected_fixture_output()
+
+        self.control.producer = producer
+        job = self.control.create("tiny-shop", "overview")
+        with patch(
+            "agent_runtime.tasks.repository_analysis.asyncio.new_event_loop",
+            side_effect=PermissionError("synthetic"),
+        ):
+            self.control.start(job["job_id"])
+            self.control.thread.join(5)
+        self.assert_failed_before_execution(job["job_id"], calls)
+        self.assertNotIn("synthetic", json.dumps(self.control.load(job["job_id"])))
+
+    def test_close_failure_still_clears_ownership(self):
+        calls = []
+
+        async def producer(source, question):
+            calls.append(question)
+            return expected_fixture_output()
+
+        class FakeLoop:
+            closed = 0
+
+            def create_task(self, coroutine):
+                coroutine.close()
+                raise RuntimeError("synthetic")
+
+            def close(self):
+                FakeLoop.closed += 1
+                raise OSError("synthetic")
+
+        self.control.producer = producer
+        job = self.control.create("tiny-shop", "overview")
+        with patch(
+            "agent_runtime.tasks.repository_analysis.asyncio.new_event_loop",
+            return_value=FakeLoop(),
+        ):
+            self.control.start(job["job_id"])
+            self.control.thread.join(5)
+        self.assertEqual(FakeLoop.closed, 1)
+        self.assert_failed_before_execution(job["job_id"], calls)
+
     def test_stop_keeps_local_cancel_and_no_native_claim(self):
         entered = threading.Event()
 
