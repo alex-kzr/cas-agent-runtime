@@ -145,7 +145,9 @@ class SessionNoReplayControlTests(unittest.TestCase):
         """SES-01-no-replay-local: reuse the existing interrupted-start controller fixture."""
         with tempfile.TemporaryDirectory() as directory:
             root = Path(directory)
-            with patch("agent_runtime.providers.claude.supervised.SupervisedClaudeAdapter") as adapter:
+            with patch(
+                "agent_runtime.providers.claude.supervised.SupervisedClaudeAdapter"
+            ) as adapter:
                 control = TaskControl(root, adapter_factory=adapter)
                 try:
                     task = control.create()
@@ -158,9 +160,7 @@ class SessionNoReplayControlTests(unittest.TestCase):
                 try:
                     self.assertEqual(restarted.load(task["task_id"])["status"], "INTERRUPTED")
                     with self.assertRaises(ValueError):
-                        restarted.start(
-                            task["task_id"], allow_live=True, allow_existing_login=True
-                        )
+                        restarted.start(task["task_id"], allow_live=True, allow_existing_login=True)
                     self.assertEqual(marker.read_bytes(), original)
                     self.assertEqual(list((root / "runs").glob("*/run.json")), [])
                     adapter.assert_not_called()
