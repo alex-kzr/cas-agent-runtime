@@ -47,11 +47,12 @@ def result_message(**values):
     return ResultMessage(**(base | values))
 
 
-def stream(final, raises=False):
+def stream(final, raises=False, init=None):
     messages = [
         SystemMessage(
             subtype="init",
-            data={
+            data=init
+            or {
                 "session_id": "synthetic",
                 "claude_code_version": "2.1.0",
                 "note": CANARY,
@@ -163,11 +164,11 @@ class Base(unittest.TestCase):
         self.controls = []
         self.addCleanup(lambda: [control.close() for control in self.controls])
 
-    def run_job(self, route, client, name, owner=InProcessOwner):
+    def run_job(self, route, client, name, owner=InProcessOwner, question="overview"):
         root = self.root / name
         control = AnalysisControl(root, supervised_factory=route)
         self.controls.append(control)
-        job = control.create("tiny-shop", "overview", None, "sdk")
+        job = control.create("tiny-shop", question, None, "sdk")
         with ExitStack() as stack:
             stack.enter_context(patch.object(sdk, "LIVE_ANALYSIS_ENABLED", True))
             stack.enter_context(patch.dict("os.environ", {}, clear=True))
@@ -343,6 +344,205 @@ class ValidReportTests(Base):
         self.assert_absent(root, CANARY, untrusted=("worker",))
         result = json.loads(next(root.glob("runs/*/result.json")).read_text())
         self.assertEqual(result["error"]["message"], "analysis_invalid_response")
+
+
+def synthetic_findings():
+    """Hand-written synthetic review; deliberately not derived from the AST fact fixture."""
+    digest = privacy_sha(SAMPLE["inventory.py"])
+    return {
+        "report_version": 2,
+        "repository": "tiny-shop",
+        "findings": [
+            {
+                "id": "F1",
+                "problem": (
+                    "The tax helper accepts any rate, so a percentage like 20 is treated "
+                    "as a multiplier."
+                ),
+                "impact": (
+                    "A caller passing a whole percentage would charge many times the "
+                    "intended total."
+                ),
+                "suggested_fix": (
+                    "Validate that the rate is a fraction between 0 and 1 before using it."
+                ),
+                "file": "inventory.py",
+                "line": 5,
+                "sha256": digest,
+            }
+        ],
+    }
+
+
+def privacy_sha(value):
+    import hashlib
+
+    return hashlib.sha256(value.encode("utf-8")).hexdigest()
+
+
+class FindingsFlowTests(Base):
+    def test_review_findings_persist_export_and_reopen_on_both_routes(self):
+        for route_name, route in ROUTES.items():
+            with self.subTest(route=route_name):
+                final = result_message(result=json.dumps(synthetic_findings()))
+                control, root, job = self.run_job(
+                    route, stream(final), f"review-{route_name}", question="review"
+                )
+                self.assertEqual(job["status"], "COMPLETED")
+                report = control.report(job["job_id"])
+                self.assertEqual(report["report"], synthetic_findings())
+                self.assertIn("Suggested fix:", report["markdown"])
+                self.assertIn("(files/inventory.py#L5)", report["markdown"])
+                with zipfile.ZipFile(io.BytesIO(control.bundle(job["job_id"]))) as archive:
+                    self.assertIn(b"percentage", archive.read("report.md"))
+                self.assert_absent(root, CANARY)
+                control.close()
+                reopened = AnalysisControl(root, supervised_factory=route)
+                self.controls.append(reopened)
+                self.assertEqual(reopened.report(job["job_id"]), report)
+
+    def test_clean_review_with_no_findings_persists_exports_and_reopens(self):
+        clean = {"report_version": 2, "repository": "tiny-shop", "findings": []}
+        for route_name, route in ROUTES.items():
+            with self.subTest(route=route_name):
+                final = result_message(result=json.dumps(clean))
+                control, root, job = self.run_job(
+                    route, stream(final), f"clean-{route_name}", question="review"
+                )
+                self.assertEqual(job["status"], "COMPLETED")
+                report = control.report(job["job_id"])
+                self.assertEqual(report["report"], clean)
+                self.assertIn("No findings reported", report["markdown"])
+                self.assertIn("not proof", report["markdown"])
+                with zipfile.ZipFile(io.BytesIO(control.bundle(job["job_id"]))) as archive:
+                    self.assertIn(b"No findings reported", archive.read("report.md"))
+                    self.assertEqual(json.loads(archive.read("report.json"))["report"], clean)
+                control.close()
+                reopened = AnalysisControl(root, supervised_factory=route)
+                self.controls.append(reopened)
+                self.assertEqual(reopened.report(job["job_id"]), report)
+
+    def test_clean_review_is_question_bound_at_the_worker_boundary(self):
+        sources = sdk.checked_sources(SAMPLE)
+        clean = json.dumps({"report_version": 2, "repository": "tiny-shop", "findings": []})
+        accepted = privacy.accepted_text(sdk.query_text(sources, "review"), clean)
+        self.assertEqual(json.loads(accepted)["findings"], [])
+        self.assertIsNone(privacy.accepted_text(sdk.query_text(sources, "overview"), clean))
+
+    def test_unscreened_or_wrong_version_text_fails_without_persisting_it(self):
+        bad = synthetic_findings()
+        bad["findings"][0]["problem"] = f"The password {CANARY} appears in the tax helper code."
+        for case, value in (
+            ("secret", bad),
+            ("v1-for-review", expected_fixture_output()),
+        ):
+            with self.subTest(case=case):
+                final = result_message(result=json.dumps(value))
+                control, root, job = self.run_job(
+                    SupervisedClaudeAdapter, stream(final), f"bad-{case}", question="review"
+                )
+                self.assertEqual(job["status"], "FAILED")
+                self.assertIsNone(job["report"])
+                self.assert_absent(root, CANARY)
+
+    def test_v2_text_is_rejected_for_a_v1_question(self):
+        final = result_message(result=json.dumps(synthetic_findings()))
+        control, root, job = self.run_job(
+            SupervisedClaudeAdapter, stream(final), "v2-for-v1", question="overview"
+        )
+        self.assertEqual(job["status"], "FAILED")
+        self.assertIsNone(job["report"])
+
+    def test_worker_boundary_is_question_bound(self):
+        sources = sdk.checked_sources(SAMPLE)
+        review = sdk.query_text(sources, "review")
+        overview = sdk.query_text(sources, "overview")
+        good = json.dumps(synthetic_findings())
+        self.assertEqual(json.loads(privacy.accepted_text(review, good)), synthetic_findings())
+        self.assertIsNone(privacy.accepted_text(overview, good))
+        self.assertIsNone(privacy.accepted_text(review, json.dumps(expected_fixture_output())))
+        self.assertEqual(json.loads(sdk.query_text(sources, "overview"))["schema_version"], 1)
+        self.assertEqual(json.loads(review)["schema_version"], 2)
+
+    def test_review_needs_sdk_mode_and_has_no_scripted_fixture(self):
+        control = AnalysisControl(self.root / "offline")
+        self.controls.append(control)
+        with self.assertRaises(ValueError):
+            control.create("tiny-shop", "review")
+
+
+class ContextCountTests(Base):
+    EXPECTED = {
+        "provenance": "sdk-init-advertisement",
+        "tools_count": 2,
+        "mcp_servers_count": 1,
+        "skills_count": 3,
+        "plugins_count": 4,
+        "memory_paths_count": 1,
+        "content_loaded": None,
+        "context_isolation": "unverified",
+    }
+
+    def init(self):
+        return {
+            "session_id": "synthetic",
+            "tools": [CANARY, "Read"],
+            "mcp_servers": [{"name": CANARY, "status": "connected"}],
+            "skills": [CANARY, KEY_CANARY, "x"],
+            "plugins": [{"name": CANARY, "path": f"/home/{CANARY}"} for _ in range(4)],
+            "memory_paths": {"auto": f"/home/{CANARY}/memory"},
+        }
+
+    def test_counts_survive_producer_recorder_and_worker_import_without_names(self):
+        for route_name, route in ROUTES.items():
+            with self.subTest(route=route_name):
+                final = result_message(result=json.dumps(expected_fixture_output()))
+                control, root, job = self.run_job(
+                    route, stream(final, init=self.init()), f"context-{route_name}"
+                )
+                self.assertEqual(job["status"], "COMPLETED")
+                events = [
+                    json.loads(line)
+                    for path in root.glob("runs/*/events.jsonl")
+                    for line in path.read_text(encoding="utf-8").splitlines()
+                ]
+                observed = [e["payload"] for e in events if e["type"] == "context.observed"]
+                self.assertTrue(observed)
+                for payload in observed:
+                    self.assertEqual(payload, self.EXPECTED)
+                self.assert_absent(root, CANARY, KEY_CANARY)
+
+    def test_projection_is_typed_idempotent_and_never_claims_isolation(self):
+        projected = privacy.context_observed(
+            {
+                "provenance": CANARY,
+                "tools_count": True,
+                "mcp_servers_count": -1,
+                "skills_count": privacy.MAX_CONTEXT_COUNT + 1,
+                "plugins_count": 2.0,
+                "memory_paths_count": CANARY,
+                "content_loaded": True,
+                "context_isolation": "verified",
+                KEY_CANARY: 1,
+            }
+        )
+        self.assertEqual(
+            projected,
+            {
+                "provenance": "sdk-init-advertisement",
+                "tools_count": None,
+                "mcp_servers_count": None,
+                "skills_count": None,
+                "plugins_count": None,
+                "memory_paths_count": None,
+                "content_loaded": None,
+                "context_isolation": "unverified",
+            },
+        )
+        known = privacy.context_observed(self.EXPECTED)
+        self.assertEqual(known, self.EXPECTED)
+        self.assertEqual(privacy.event("context.observed", known), known)
+        self.assertEqual(privacy.context_observed({"tools_count": 0})["tools_count"], 0)
 
 
 class PolicyTests(unittest.TestCase):

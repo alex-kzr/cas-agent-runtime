@@ -437,6 +437,34 @@ def _fixed(value):
     return kept if kept is not None else "other"
 
 
+CONTEXT_COUNTS = (
+    "tools_count",
+    "mcp_servers_count",
+    "skills_count",
+    "plugins_count",
+    "memory_paths_count",
+)
+MAX_CONTEXT_COUNT = 10_000
+
+
+def _context_count(value):
+    """Exact nonnegative bounded integer (never a bool) or None for unknown."""
+    return value if type(value) is int and 0 <= value <= MAX_CONTEXT_COUNT else None
+
+
+def context_observed(payload):
+    """Advertised registration counts only; fixed provenance, never a loaded/isolated claim.
+
+    Idempotent: an already-projected payload projects to itself.
+    """
+    return {
+        "provenance": "sdk-init-advertisement",
+        **{name: _context_count(payload.get(name)) for name in CONTEXT_COUNTS},
+        "content_loaded": None,
+        "context_isolation": "unverified",
+    }
+
+
 def event(kind, payload):
     """Project one event payload to its allowlisted metadata before it is written."""
     if not isinstance(payload, dict):
@@ -460,6 +488,8 @@ def event(kind, payload):
             "error_present": _present(payload, "error_present", ("error",), truthy=True),
             "provenance": _fixed(payload.get("provenance")),
         }
+    if kind == "context.observed":
+        return context_observed(payload)
     if kind == "hook.callback":
         return {"hook": enum(payload.get("hook"), HOOKS)}
     if kind == "permission.decision":
@@ -563,20 +593,25 @@ def worker_result(result, instructions):
 def accepted_text(instructions, raw):
     """Canonical JSON of a source-grounded valid report, else None; the parent re-validates."""
     # Lazy imports: recorder -> this module must not import the task layer at load time.
-    from agent_runtime.tasks.repository_analysis import validate_report
+    from agent_runtime.tasks.repository_analysis import QUESTIONS, validate_for
     from agent_runtime.tasks.repository_analysis_sdk import (
         MAX_RESPONSE_BYTES,
         checked_sources,
+        query_text,
         unique,
     )
 
     try:
         if not isinstance(raw, str) or len(raw.encode("utf-8")) > MAX_RESPONSE_BYTES:
             return None
-        snapshots = json.loads(instructions)["snapshots"]
-        sources = checked_sources({item["path"]: item["content"] for item in snapshots})
+        payload = json.loads(instructions)
+        sources = checked_sources({item["path"]: item["content"] for item in payload["snapshots"]})
+        # The question (and so the report version) is bound to the exact request payload.
+        questions = [name for name, prompt in QUESTIONS.items() if prompt == payload["question"]]
+        if len(questions) != 1 or instructions != query_text(sources, questions[0]):
+            return None
         value = json.loads(raw, object_pairs_hook=unique)
-        validate_report(value, sources)
+        validate_for(questions[0], value, sources)
         return json.dumps(value, ensure_ascii=False, sort_keys=True, separators=(",", ":"))
     except (ValueError, TypeError, KeyError, AttributeError, RecursionError, OSError):
         return None

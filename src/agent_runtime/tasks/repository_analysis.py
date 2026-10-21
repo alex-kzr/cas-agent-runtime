@@ -10,6 +10,7 @@ import zipfile
 from pathlib import Path
 from uuid import UUID, uuid4
 
+from agent_runtime.tasks import review_findings
 from agent_runtime.tasks.executor import Executor, NativeResult
 from agent_runtime.tasks.models import TERMINAL, ExecutionRequest, Limits, validate_document
 from agent_runtime.telemetry.recorder import RunLock, atomic_json, now
@@ -25,7 +26,10 @@ SAMPLE = {
 QUESTIONS = {
     "overview": "Explain the project and its calculations.",
     "functions": "Describe the public functions and their calculations.",
+    "review": "Review the selected files and report concrete problems, impact and fixes.",
 }
+# Questions answered with report version 2 (prose findings); all others keep version 1 facts.
+FINDINGS_QUESTIONS = frozenset({"review"})
 
 
 def sha(value):
@@ -165,10 +169,23 @@ def validate_report(value, sources):
     return value["claims"]
 
 
+def validate_for(question, value, sources):
+    """Question-bound validation shared by the worker boundary and the parent adapter."""
+    if question in FINDINGS_QUESTIONS:
+        return review_findings.validate_findings(value, sources)
+    if type(value) is dict and "report_version" in value:
+        raise ValueError("Report version does not match the question")
+    return validate_report(value, sources)
+
+
 def markdown(value, sources, run_id, *, mode="offline"):
-    claims = validate_report(value, sources)
+    versioned = type(value) is dict and "report_version" in value
+    if versioned:
+        review_findings.validate_findings(value, sources)
+    else:
+        claims = validate_report(value, sources)
     lines = [
-        "# Tiny Shop repository analysis",
+        "# Tiny Shop repository review" if versioned else "# Tiny Shop repository analysis",
         "",
         {
             "offline": "Offline scripted sample; no model request.",
@@ -179,6 +196,9 @@ def markdown(value, sources, run_id, *, mode="offline"):
         f"CAS run: {identity(run_id)}",
         "",
     ]
+    if versioned:
+        lines += review_findings.markdown_lines(value, sources)
+        claims = []
     for item in claims:
         lines.append(
             f"- **{item['id']}**: `{item['value']}` — [{item['file']}:{item['line']}](files/{item['file']}#L{item['line']})"
@@ -200,6 +220,8 @@ class SampleAdapter:
         cleanup = {"mechanism": "in-process-no-children", "tree_empty": True, "forced": False}
         recorder.record["configuration"].update(analysis_profile=PROFILE, model_requests=0)
         try:
+            if self.question in FINDINGS_QUESTIONS:
+                raise ValueError("Review findings need a model response; no scripted fixture")
             if read_sources(request.workspace, list(self.snapshot), exact=False) != self.snapshot:
                 raise ValueError("Approved source changed before execution")
             recorder.event(
@@ -331,7 +353,9 @@ class AnalysisControl:
                                 saved = json.loads(path.read_text(encoding="utf-8"))
                                 if saved["run_id"] != job["run_id"]:
                                     raise ValueError("Report belongs to a different run")
-                                validate_report(saved["report"], self.sources(job["job_id"]))
+                                validate_for(
+                                    job["question"], saved["report"], self.sources(job["job_id"])
+                                )
                                 job["report"] = saved["report"]
                     except (ValueError, OSError, KeyError, TypeError):
                         status = "INTERRUPTED"
@@ -398,6 +422,8 @@ class AnalysisControl:
         selected_files(job.get("files"))
         if job.get("mode", "offline") not in {"offline", "sdk"}:
             raise ValueError("Invalid analysis mode")
+        if job["question"] in FINDINGS_QUESTIONS and job.get("mode") != "sdk":
+            raise ValueError("Review findings require the SDK mode")
         if job.get("mode") == "sdk" and (
             not job.get("files")
             or type(job.get("snapshot_sha256")) is not str
@@ -430,7 +456,7 @@ class AnalysisControl:
             from agent_runtime.tasks.repository_analysis_sdk import checked_sources, snapshot_digest
 
             names = selected_files(files)
-            if mode not in {"offline", "sdk"}:
+            if mode not in {"offline", "sdk"} or (question in FINDINGS_QUESTIONS and mode != "sdk"):
                 raise ValueError("Unsupported mode")
             source = checked_sources(read_sources(self.workspace, names, exact=False))
             job = {
@@ -673,7 +699,7 @@ class AnalysisControl:
         if job["status"] != "COMPLETED" or self.canonical(job)["status"] != "COMPLETED":
             raise ValueError("No validated completed report")
         source = self.sources(job_id)
-        validate_report(job["report"], source)
+        validate_for(job["question"], job["report"], source)
         application = self.canonical(job)["usage"].get("application") or {}
         mode = "mock-sdk" if application.get("mock_sdk_test_only") else job.get("mode", "offline")
         return {
