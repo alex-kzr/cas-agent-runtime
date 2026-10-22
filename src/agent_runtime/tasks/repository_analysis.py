@@ -10,7 +10,7 @@ import zipfile
 from pathlib import Path
 from uuid import UUID, uuid4
 
-from agent_runtime.tasks import review_findings
+from agent_runtime.tasks import review_findings, review_profile
 from agent_runtime.tasks.executor import Executor, NativeResult
 from agent_runtime.tasks.models import TERMINAL, ExecutionRequest, Limits, validate_document
 from agent_runtime.telemetry.recorder import RunLock, atomic_json, now
@@ -51,20 +51,22 @@ def guarded(path):
     return path
 
 
-def selected_files(names=None):
-    names = list(SAMPLE) if names is None else names
+def selected_files(names=None, allowed=None):
+    """Unique names from an explicit allowlist (the legacy SAMPLE unless a scope passes its own)."""
+    allowed = SAMPLE if allowed is None else allowed
+    names = list(allowed) if names is None else names
     if (
         type(names) is not list
         or not names
-        or any(type(n) is not str or n not in SAMPLE for n in names)
+        or any(type(n) is not str or n not in allowed for n in names)
         or len(names) != len(set(names))
     ):
         raise ValueError("Select unique allowlisted sample files")
     return sorted(names)
 
 
-def read_sources(directory, names=None, *, exact=True):
-    names = selected_files(names)
+def read_sources(directory, names=None, *, exact=True, allowed=None):
+    names = selected_files(names, allowed)
     directory = guarded(directory)
     if exact and {p.name for p in directory.iterdir()} != set(names):
         raise ValueError("Only selected approved sample files may exist")
@@ -281,7 +283,9 @@ class SampleAdapter:
 class AnalysisControl:
     """One local Executor operation at a time; reload/restart never replays a claim."""
 
-    def __init__(self, data_dir, *, producer=None, supervised_factory=None):
+    def __init__(self, data_dir, *, producer=None, supervised_factory=None, profile=None):
+        self._profile = profile  # None means the canonical mean-review profile, built lazily
+        self.watchdog_fired = False
         self.root = guarded(data_dir)
         marker = self.root / "analysis-profile.json"
         if self.root.exists():
@@ -365,11 +369,16 @@ class AnalysisControl:
             self.owner.__exit__()
             raise
 
+    @property
+    def profile(self):
+        return self._profile if self._profile is not None else review_profile.canonical()
+
     def load(self, job_id):
         path = guarded(self.directory / (identity(job_id) + ".json"))
         if path.stat().st_size > 32768:
             raise ValueError("Analysis record too large")
         job = json.loads(path.read_text(encoding="utf-8"))
+        scoped = type(job) is dict and job.get("scope_sha256") is not None
         if (
             type(job) is not dict
             or set(job)
@@ -387,6 +396,7 @@ class AnalysisControl:
                 "files",
                 "mode",
                 "snapshot_sha256",
+                "scope_sha256",
             }
             or not {
                 "job_id",
@@ -400,7 +410,13 @@ class AnalysisControl:
             }.issubset(job)
             or job.get("job_id") != job_id
             or job.get("profile")
-            != ("repository-analysis-sdk-v1" if job.get("mode") == "sdk" else PROFILE)
+            != (
+                review_profile.PROFILE_ID
+                if scoped
+                else "repository-analysis-sdk-v1"
+                if job.get("mode") == "sdk"
+                else PROFILE
+            )
             or job.get("repository") != "tiny-shop"
             or type(job.get("question")) is not str
             or job.get("question") not in QUESTIONS
@@ -419,7 +435,19 @@ class AnalysisControl:
             raise ValueError("Invalid analysis record")
         if job["run_id"] is not None:
             identity(job["run_id"])
-        selected_files(job.get("files"))
+        if scoped:
+            # Mean-review scope: only its own fixture, question and mode; never SAMPLE files.
+            if (
+                job.get("mode") != "sdk"
+                or job["question"] != review_profile.QUESTION_KEY
+                or job.get("files") != [review_profile.SOURCE_NAME]
+                or type(job["scope_sha256"]) is not str
+                or len(job["scope_sha256"]) != 64
+                or any(c not in "0123456789abcdef" for c in job["scope_sha256"])
+            ):
+                raise ValueError("Invalid scoped analysis record")
+        else:
+            selected_files(job.get("files"))
         if job.get("mode", "offline") not in {"offline", "sdk"}:
             raise ValueError("Invalid analysis mode")
         if job["question"] in FINDINGS_QUESTIONS and job.get("mode") != "sdk":
@@ -444,6 +472,8 @@ class AnalysisControl:
             return [self.load(path.stem) for path in sorted(paths)]
 
     def create(self, repository, question, files=None, mode="offline"):
+        if mode == review_profile.SCOPE_MODE:
+            return self._create_scoped(repository, question, files)
         with self.lock:
             if (
                 repository != "tiny-shop"
@@ -480,7 +510,52 @@ class AnalysisControl:
             self.save(job)
             return job
 
-    def start(self, job_id, *, allow_live=False, allow_existing_login=False, snapshot_sha256=None):
+    def _create_scoped(self, repository, question, files):
+        """Mean-review draft: the one approved fixture, bound to the current scope fingerprint."""
+        from agent_runtime.tasks.repository_analysis_sdk import checked_sources, snapshot_digest
+
+        with self.lock:
+            profile = self.profile
+            if (
+                repository != profile.repository
+                or question != profile.question_key
+                or files != profile.source_names
+                or self.closing
+                or len(self.list()) >= 100
+            ):
+                raise ValueError("Select the approved mean-review scope")
+            source = checked_sources(dict(profile.sources), profile)
+            job = {
+                "job_id": str(uuid4()),
+                "profile": profile.profile_id,
+                "repository": repository,
+                "question": question,
+                "status": "DRAFT",
+                "run_id": None,
+                "created_at": now(),
+                "report": None,
+                "files": list(source),
+                "mode": "sdk",
+                "snapshot_sha256": snapshot_digest(source),
+                "scope_sha256": profile.fingerprint,
+            }
+            snapshots = guarded(self.directory / job["job_id"] / "files")
+            snapshots.mkdir(parents=True, exist_ok=False)
+            for name, content in source.items():
+                with (snapshots / name).open("x", encoding="utf-8", newline="\n") as stream:
+                    stream.write(content)
+            self.save(job)
+            return job
+
+    def start(
+        self,
+        job_id,
+        *,
+        allow_live=False,
+        allow_existing_login=False,
+        snapshot_sha256=None,
+        scope_sha256=None,
+    ):
         with self.lock:
             job = self.load(job_id)
             if self.active or self.closing or job["status"] != "DRAFT":
@@ -488,7 +563,22 @@ class AnalysisControl:
             from agent_runtime.tasks.repository_analysis_sdk import require_release
 
             sdk = job.get("mode") == "sdk"
-            if sdk:
+            scoped = job.get("scope_sha256") is not None
+            if scoped:
+                # Own default-closed gate; the legacy flag is neither required nor sufficient.
+                review_profile.require_scope_release()
+                if (
+                    allow_live is not True
+                    or allow_existing_login is not True
+                    or snapshot_sha256 != job.get("snapshot_sha256")
+                    or type(scope_sha256) is not str
+                    or scope_sha256 != job["scope_sha256"]
+                    or job["scope_sha256"] != self.profile.fingerprint
+                ):
+                    raise PermissionError("Fresh consents and the exact current scope required")
+            elif scope_sha256 is not None:
+                raise PermissionError("Scope fingerprint does not apply to this analysis")
+            elif sdk:
                 require_release()
                 if (
                     allow_live is not True
@@ -497,14 +587,16 @@ class AnalysisControl:
                 ):
                     raise PermissionError("Fresh consents and exact snapshot digest required")
             source = self.sources(job_id) if job.get("files") else read_sources(self.workspace)
-            if read_sources(self.workspace, list(source), exact=False) != source:
+            if scoped:
+                if source != self.profile.sources:
+                    raise ValueError("Approved source changed")
+            elif read_sources(self.workspace, list(source), exact=False) != source:
                 raise ValueError("Approved source changed")
             claim = guarded(self.directory / (job_id + ".started"))
             run_id = str(uuid4())
             if sdk:
-                with guarded(self.directory / "sdk-attempt.started").open(
-                    "x", encoding="ascii"
-                ) as stream:
+                slot = review_profile.SLOT_FILE if scoped else "sdk-attempt.started"
+                with guarded(self.directory / slot).open("x", encoding="ascii") as stream:
                     stream.write(run_id)
             with claim.open("x", encoding="ascii") as stream:
                 stream.write(run_id)
@@ -544,6 +636,7 @@ class AnalysisControl:
                 agent_name="read-only-v1",
                 run_id=job["run_id"],
             )
+            profile = None
             if job.get("mode") == "sdk":
                 from agent_runtime.tasks.repository_analysis_sdk import (
                     LIMITS,
@@ -552,27 +645,30 @@ class AnalysisControl:
                     query_text,
                 )
 
+                profile = self.profile if job.get("scope_sha256") is not None else None
                 adapter = SnapshotSDKAdapter(
                     source,
                     job["question"],
                     persist,
                     supervised_factory=self.supervised_factory,
                     environment={} if self.supervised_factory is not None else None,
+                    profile=profile,
                 )
                 workspace = guarded(self.root / "workspaces" / ("sdk-" + job["run_id"]))
                 workspace.mkdir(exist_ok=False)
                 request = ExecutionRequest(
                     "scenario",
-                    query_text(source, job["question"]),
+                    query_text(source, job["question"], profile),
                     workspace,
-                    LIMITS,
+                    profile.limits() if profile else LIMITS,
                     "sdk.repository-analysis",
-                    model=MODEL,
+                    model=profile.model if profile else MODEL,
                     live_authorized=True,
                     allow_existing_login=True,
                     agent_name="text-only-v1",
                     run_id=job["run_id"],
                 )
+            watchdog = None
             with self.lock:
                 if self.closing:
                     raise ValueError("Controller closed before execution")
@@ -580,17 +676,30 @@ class AnalysisControl:
                 job["status"] = "RUNNING"
                 self.save(job)
                 self.execution = loop.create_task(Executor(self.root, adapter).execute(request))
-            record = loop.run_until_complete(self.execution)
+                if profile is not None:
+                    # Cooperative outer watchdog on the event loop: it cannot preempt a blocking
+                    # call or prove native/OS cancellation. The inner deadlines fire first.
+                    watchdog = loop.call_later(profile.watchdog_seconds, self._watchdog)
+            try:
+                record = loop.run_until_complete(self.execution)
+            finally:
+                if watchdog is not None:
+                    watchdog.cancel()
             with self.lock:
                 job.update(
                     status=record["status"],
                     report=adapter.report if record["status"] == "COMPLETED" else None,
                 )
+                if self.watchdog_fired:
+                    job["error"] = "Outer watchdog elapsed; no replay"
                 self.save(job)
         except Exception:
             try:
                 with self.lock:
-                    job.update(status="FAILED", error="Local analysis failed; no replay")
+                    job.update(
+                        status=self._settle_canonical(job),
+                        error="Local analysis failed; no replay",
+                    )
                     self.save(job)
             # Intentional: never log raw exception text; status persistence is best effort.
             except Exception:  # noqa: S110
@@ -606,9 +715,43 @@ class AnalysisControl:
                 with self.lock:
                     self.active, self.loop, self.execution = None, None, None
 
+    def _watchdog(self):
+        if self.execution is not None and not self.execution.done():
+            self.watchdog_fired = True
+            self.execution.cancel()
+
+    def _settle_canonical(self, job):
+        """After a local failure never leave the canonical run active; return the job status."""
+        try:
+            path = guarded(self.root / "runs" / identity(job["run_id"]) / "run.json")
+            record = json.loads(path.read_text(encoding="utf-8"))
+            validate_document("run", record)
+            if record["status"] not in TERMINAL:
+                with RunLock(self.root):
+                    record.update(
+                        status="INTERRUPTED",
+                        evidence_status="partial",
+                        ended_at=now(),
+                        updated_at=now(),
+                    )
+                    record["error"] = {
+                        "category": "interrupted",
+                        "code": "process_lost",
+                        "message": "Offline writer lost; no replay",
+                        "retryable": False,
+                        "evidence_refs": [],
+                    }
+                    validate_document("run", record)
+                    atomic_json(path, record)
+            return record["status"] if record["status"] != "COMPLETED" else "FAILED"
+        except (ValueError, OSError, KeyError, TypeError, RuntimeError):
+            return "FAILED"
+
     def stop(self, job_id):
         with self.lock:
             job = self.load(job_id)
+            if job["status"] not in {"STARTING", "RUNNING", "STOPPING"}:
+                raise ValueError("A finished analysis keeps its final state")
             if (
                 self.active != job_id
                 or self.loop is None
@@ -649,18 +792,45 @@ class AnalysisControl:
             from agent_runtime.tasks.models import sdk_succeeded
             from agent_runtime.tasks.repository_analysis_sdk import LIMITS, MODEL
 
-            if (
-                record["configuration"].get("snapshot_sha256") != job["snapshot_sha256"]
-                or record["provider"]["requested_model"] != MODEL
-                or record["limits"] != asdict(LIMITS)
+            scoped = job.get("scope_sha256") is not None
+            if scoped:
+                # A historical record is checked against its own stored fingerprint; the CURRENT
+                # profile bounds are compared only while the fingerprint is still current.
+                current = job["scope_sha256"] == self.profile.fingerprint
+                identity_ok = (
+                    record["configuration"].get("scope_sha256") == job["scope_sha256"]
+                    and record["configuration"].get("analysis_profile") == job["profile"]
+                    and (
+                        not current
+                        or (
+                            record["provider"]["requested_model"] == self.profile.model
+                            and record["limits"] == asdict(self.profile.limits())
+                        )
+                    )
+                )
+            else:
+                identity_ok = record["provider"]["requested_model"] == MODEL and record[
+                    "limits"
+                ] == asdict(LIMITS)
+            if record["configuration"].get("snapshot_sha256") != job["snapshot_sha256"] or (
+                not identity_ok
             ):
                 raise ValueError("SDK scope identity differs")
             if record["status"] == "COMPLETED":
                 application = record["usage"].get("application") or {}
+                audit = application.get("review_audit") or {}
                 if (
                     not sdk_succeeded(record["sdk_outcome"])
                     or application.get("model_requests") != 1
                     or (application.get("cleanup") or {}).get("tree_empty") is not True
+                    or (
+                        scoped
+                        and (
+                            audit.get("results") != 1
+                            or type(audit.get("observed_turns")) is not int
+                            or audit.get("observed_turns") != 1
+                        )
+                    )
                 ):
                     raise ValueError("SDK completion evidence is incomplete")
         return record
@@ -671,8 +841,14 @@ class AnalysisControl:
             raise ValueError("No source snapshot yet")
         from agent_runtime.tasks.repository_analysis_sdk import checked_sources, snapshot_digest
 
+        profile = self.profile if job.get("scope_sha256") is not None else None
         source = checked_sources(
-            read_sources(self.directory / identity(job_id) / "files", job.get("files"))
+            read_sources(
+                self.directory / identity(job_id) / "files",
+                job.get("files"),
+                allowed=profile.sources if profile else None,
+            ),
+            profile,
         )
         if job.get("snapshot_sha256") and snapshot_digest(source) != job["snapshot_sha256"]:
             raise ValueError("Source snapshot digest mismatch")
@@ -691,6 +867,26 @@ class AnalysisControl:
 
         job = self.load(job_id)
         sources = self.sources(job_id)
+        if job.get("scope_sha256") is not None:
+            profile = self.profile
+            query = query_text(sources, job["question"], profile)
+            return {
+                "payload": build_payload(sources, job["question"], profile),
+                "query_text": query,
+                "query_sha256": sha(query),
+                "snapshot_sha256": job.get("snapshot_sha256"),
+                "scope_sha256": profile.fingerprint,
+                "scope_current": job["scope_sha256"] == profile.fingerprint,
+                "scope": profile.identity(),
+                "model": profile.model,
+                "recipient": "Anthropic via existing claude.ai subscription",
+                "limits": asdict(profile.limits()),
+                # The scope's own gate only. The legacy flag is reported separately and unused.
+                "live_enabled": review_profile.MEAN_REVIEW_LIVE_ENABLED,
+                "legacy_live_enabled": LIVE_ANALYSIS_ENABLED,
+                "tools": [],
+                "one_attempt_per_data_directory": True,
+            }
         query = query_text(sources, job["question"])
         return {
             "payload": build_payload(sources, job["question"]),
@@ -713,14 +909,20 @@ class AnalysisControl:
         validate_for(job["question"], job["report"], source)
         application = self.canonical(job)["usage"].get("application") or {}
         mode = "mock-sdk" if application.get("mock_sdk_test_only") else job.get("mode", "offline")
+        scoped = job.get("scope_sha256") is not None
         return {
             "run_id": job["run_id"],
-            "profile": "repository-analysis-sdk-v1" if mode != "offline" else PROFILE,
+            "profile": job["profile"]
+            if scoped
+            else "repository-analysis-sdk-v1"
+            if mode != "offline"
+            else PROFILE,
             "mode": mode,
             "model_requests": application.get("model_requests", 0),
             "real_model_requests": 0 if mode in {"offline", "mock-sdk"} else None,
             "report": job["report"],
             "markdown": markdown(job["report"], source, job["run_id"], mode=mode),
+            **({"scope_sha256": job["scope_sha256"]} if scoped else {}),
         }
 
     def bundle(self, job_id):

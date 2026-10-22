@@ -12,6 +12,7 @@ import json
 import math
 import re
 
+from agent_runtime.tasks import review_profile
 from agent_runtime.tasks.models import sdk_succeeded
 
 SCENARIO = "sdk.repository-analysis"
@@ -89,6 +90,8 @@ ANALYSIS_CODES = frozenset(
         "analysis_sdk_failed",
         "analysis_response_withheld",
     }
+    # Numeric budget reasons only (analysis_budget_<n>); never any content.
+    | {review_profile.reason_message(code) for code in review_profile.REASONS}
 )
 # Messages produced by CAS code itself; provider text can never equal an entry by accident.
 FIXED_TEXT = frozenset(
@@ -237,6 +240,22 @@ STRUCTURE_KEYS = frozenset(
         "count",
         "mode",
         "tag",
+        # Typed mean-review profile fields: bounded integers/booleans and fixed identifiers.
+        "review_budget",
+        "review_audit",
+        "reason_code",
+        "failed",
+        "frames",
+        "blank_frames",
+        "wire_bytes",
+        "max_frame_bytes",
+        "stderr_bytes",
+        "cleanup_unknown",
+        "messages",
+        "results",
+        "observed_turns",
+        "profile",
+        "scope_sha256",
     }
 )
 # Maps keyed by CAS-snapshot file paths (analysis.sources); keys must still be path-shaped.
@@ -572,11 +591,13 @@ def task_source(source):
     return {**source, "instructions": INSTRUCTIONS_WITHHELD, "instructions_truncated": False}
 
 
-def worker_result(result, instructions):
+def worker_result(result, instructions, profile=None):
     """Worker response body: validated report text or no text, plus safe metadata only."""
     if result is None:
         return None
-    report = accepted_text(instructions, result.text) if sdk_succeeded(result.outcome) else None
+    report = (
+        accepted_text(instructions, result.text, profile) if sdk_succeeded(result.outcome) else None
+    )
     return {
         "text": report,
         "outcome": outcome(result.outcome),
@@ -590,7 +611,7 @@ def worker_result(result, instructions):
     }
 
 
-def accepted_text(instructions, raw):
+def accepted_text(instructions, raw, profile=None):
     """Canonical JSON of a source-grounded valid report, else None; the parent re-validates."""
     # Lazy imports: recorder -> this module must not import the task layer at load time.
     from agent_runtime.tasks.repository_analysis import QUESTIONS, validate_for
@@ -602,16 +623,34 @@ def accepted_text(instructions, raw):
     )
 
     try:
-        if not isinstance(raw, str) or len(raw.encode("utf-8")) > MAX_RESPONSE_BYTES:
+        if profile is not None:
+            # Exact scope fixture and prompt only; the legacy SAMPLE selection never applies.
+            if instructions != profile.query_text:
+                return None
+            sources, questions = dict(profile.sources), [profile.question_key]
+            raw_limit, canonical_limit = profile.max_raw_final_bytes, profile.max_canonical_bytes
+        else:
+            if review_profile.is_scope_query(instructions):
+                return None  # A scoped query must carry its profile; never fall back to SAMPLE.
+            raw_limit, canonical_limit = MAX_RESPONSE_BYTES, None
+        if not isinstance(raw, str) or len(raw.encode("utf-8")) > raw_limit:
             return None
-        payload = json.loads(instructions)
-        sources = checked_sources({item["path"]: item["content"] for item in payload["snapshots"]})
-        # The question (and so the report version) is bound to the exact request payload.
-        questions = [name for name, prompt in QUESTIONS.items() if prompt == payload["question"]]
-        if len(questions) != 1 or instructions != query_text(sources, questions[0]):
-            return None
+        if profile is None:
+            payload = json.loads(instructions)
+            sources = checked_sources(
+                {item["path"]: item["content"] for item in payload["snapshots"]}
+            )
+            # The question (and so the report version) is bound to the exact request payload.
+            questions = [
+                name for name, prompt in QUESTIONS.items() if prompt == payload["question"]
+            ]
+            if len(questions) != 1 or instructions != query_text(sources, questions[0]):
+                return None
         value = json.loads(raw, object_pairs_hook=unique)
         validate_for(questions[0], value, sources)
-        return json.dumps(value, ensure_ascii=False, sort_keys=True, separators=(",", ":"))
+        canonical = json.dumps(value, ensure_ascii=False, sort_keys=True, separators=(",", ":"))
+        if canonical_limit is not None and len(canonical.encode("utf-8")) > canonical_limit:
+            return None
+        return canonical
     except (ValueError, TypeError, KeyError, AttributeError, RecursionError, OSError):
         return None

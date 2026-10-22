@@ -6,9 +6,11 @@ import json
 import os
 import re
 from collections.abc import Mapping
+from contextlib import AsyncExitStack
 from dataclasses import asdict, is_dataclass
 
 from claude_agent_sdk import (
+    AssistantMessage,
     ClaudeAgentOptions,
     ClaudeSDKClient,
     ConversationResetMessage,
@@ -34,7 +36,7 @@ from agent_runtime.providers.claude.context import (
 )
 from agent_runtime.providers.claude.permissions import read_allowed
 from agent_runtime.providers.claude.resume_diagnostics import SCENARIO, observe_rejection
-from agent_runtime.tasks import analysis_privacy
+from agent_runtime.tasks import analysis_privacy, review_profile
 from agent_runtime.tasks.executor import NativeResult
 from agent_runtime.tasks.models import ExecutionRequest, sdk_succeeded
 from agent_runtime.telemetry.events import observe_message
@@ -87,11 +89,70 @@ def observe_session_identity(message, request, recorder):
     recorder.save()
 
 
-class ClaudeAdapter:
-    def __init__(self, environment: Mapping[str, str]):
-        self.environment = dict(environment)
+def make_transport(profile, options, accountant):
+    """The only constructor of the bounded transport; tests substitute a mock delegate here."""
+    from agent_runtime.providers.claude.review_transport import ReviewTransport
 
-    def options(self, request: ExecutionRequest, recorder: Recorder) -> ClaudeAgentOptions:
+    return ReviewTransport(profile, options, accountant=accountant)
+
+
+class ReviewCounters:
+    """Downstream per-message counters of the mean-review scope (independent of the transport)."""
+
+    def __init__(self, profile):
+        self.profile = profile
+        self.messages = self.results = 0
+        self.turns = None
+        self.message_ids = set()
+        self.code = None
+
+    def message(self, message):
+        profile = self.profile
+        self.messages += 1
+        if self.messages > profile.max_messages:
+            raise review_profile.BudgetExceeded(review_profile.MESSAGES)
+
+    def checked(self, message):
+        """Post-event consistency checks on one message."""
+        profile = self.profile
+        if isinstance(message, AssistantMessage):
+            if message.parent_tool_use_id:
+                raise review_profile.BudgetExceeded(review_profile.COUNTERS)
+            if not review_profile.model_matches(profile, message.model):
+                raise review_profile.BudgetExceeded(review_profile.MODEL)
+            if message.message_id is not None:
+                self.message_ids.add(message.message_id)
+                if len(self.message_ids) > profile.observed_turns:
+                    raise review_profile.BudgetExceeded(review_profile.TURNS)
+        elif isinstance(message, ResultMessage):
+            self.results += 1
+            turns = message.num_turns
+            if self.results > 1 or type(turns) is not int or turns != profile.observed_turns:
+                raise review_profile.BudgetExceeded(review_profile.TURNS)
+            self.turns = turns
+
+    def snapshot(self, accountant, code, failed):
+        snapshot = {
+            **accountant.snapshot(),
+            "messages": self.messages,
+            "results": self.results,
+            "failed": failed,
+        }
+        if self.turns is not None:
+            snapshot["observed_turns"] = self.turns
+        if code is not None:
+            snapshot["reason_code"] = code
+        return snapshot
+
+
+class ClaudeAdapter:
+    def __init__(self, environment: Mapping[str, str], profile=None):
+        self.environment = dict(environment)
+        self.profile = profile
+
+    def options(
+        self, request: ExecutionRequest, recorder: Recorder, accountant=None
+    ) -> ClaudeAgentOptions:
         from agent_runtime.tasks.coding import PROFILE, TOOLS, CodingWorkspace, sdk_server
 
         coding = (
@@ -221,13 +282,55 @@ class ClaudeAdapter:
             max_turns=request.limits.max_turns,
             max_budget_usd=float(request.limits.max_budget_usd),
             env=environment,
-            include_partial_messages=True,
-            stderr=(lambda line: observe_rejection(request, recorder, [line], "stderr"))
+            # The bounded scope reads whole messages only: partial-message streaming would spend
+            # the message/frame budget on token deltas.
+            include_partial_messages=self.profile is None,
+            stderr=accountant.stderr_line
+            if accountant is not None
+            else (lambda line: observe_rejection(request, recorder, [line], "stderr"))
             if request.scenario_id == SCENARIO
             else (lambda _: None),
+            **({"max_buffer_size": self.profile.max_frame_bytes} if self.profile else {}),
         )
 
     async def run(self, request: ExecutionRequest, recorder: Recorder) -> NativeResult:
+        profile = self.profile
+        if profile is None:
+            return await self._run(request, recorder, None, None)
+        # Mean-review scope: the request must be exactly the profile before any auth/provider path.
+        if (
+            request.model != profile.model
+            or request.limits != profile.limits()
+            or request.instructions != profile.query_text
+            or request.agent_name != "text-only-v1"
+            or request.resume_session_id is not None
+        ):
+            raise PermissionError("Request differs from the bounded review profile")
+        from agent_runtime.providers.claude.review_transport import StreamAccountant
+
+        accountant, counters = StreamAccountant(profile), ReviewCounters(profile)
+        code, failed = None, True
+        try:
+            result = await self._run(request, recorder, accountant, counters)
+            accountant.raise_if_failed()  # a budget breach after the result still fails the run
+            failed = False
+        except review_profile.BudgetExceeded as error:
+            code = error.code
+            raise
+        except Exception:
+            if accountant.failure is not None:
+                code = accountant.failure
+                raise review_profile.BudgetExceeded(code) from None
+            raise
+        finally:
+            snapshot = counters.snapshot(accountant, code, failed)
+            application = dict(recorder.record["usage"].get("application") or {})
+            application["review_budget"] = snapshot
+            recorder.record["usage"]["application"] = application
+        result.application_usage["review_budget"] = snapshot
+        return result
+
+    async def _run(self, request, recorder, accountant, counters) -> NativeResult:
         require_auth(request, self.environment)
         if request.auth_mode == "subscription":
             selected = auth_environment(
@@ -266,12 +369,26 @@ class ClaudeAdapter:
         )
         result = None
         observed_usage = ObservedUsage()
-        async with ClaudeSDKClient(options=self.options(request, recorder)) as client:
+        options = self.options(request, recorder, accountant)
+        if self.profile is None:
+            sdk_client = ClaudeSDKClient(options=options)
+        else:
+            # Never the default transport: oversize/silence must not fall through to CLI defaults.
+            sdk_client = ClaudeSDKClient(
+                options=options, transport=make_transport(self.profile, options, accountant)
+            )
+        async with sdk_client as client, AsyncExitStack() as streams:
             recorder.event(
                 "sdk.query_started", {"resume_requested": bool(request.resume_session_id)}, "sdk"
             )
             await client.query(request.instructions)
-            async for message in client.receive_response():
+            stream = client.receive_response()
+            if callable(getattr(stream, "aclose", None)):
+                # An early failure must close the generator before the client/loop shut down.
+                streams.push_async_callback(stream.aclose)
+            async for message in stream:
+                if counters is not None:
+                    counters.message(message)  # before context/summary/event expansion
                 context = context_observation(message)
                 if context is not None:
                     recorder.event("context.observed", context, "sdk")
@@ -289,6 +406,8 @@ class ClaudeAdapter:
                     {"message_type": type(message).__name__, "message": payload},
                     "sdk",
                 )
+                if counters is not None:
+                    counters.checked(message)
                 if not isinstance(message, ResultMessage):
                     observe_session_identity(message, request, recorder)
                 if isinstance(message, ResultMessage):

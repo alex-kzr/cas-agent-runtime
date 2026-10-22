@@ -9,14 +9,17 @@ CLEANUP_SECONDS = 3.0
 
 
 class OwnedProcess:
-    def __init__(self):
+    def __init__(self, cleanup_seconds=CLEANUP_SECONDS):
+        if type(cleanup_seconds) not in (int, float) or not 0 < cleanup_seconds <= 10:
+            raise ValueError("cleanup_seconds must be a number in (0, 10]")
+        self.cleanup_seconds = cleanup_seconds
         self.process = None
         self.released = False
         self.cleanup = {
             "mechanism": "windows-job",
             "tree_empty": False,
             "forced": False,
-            "deadline_seconds": CLEANUP_SECONDS,
+            "deadline_seconds": cleanup_seconds,
         }
 
     async def run(self, command, payload, environment, *, stderr_sink=None):
@@ -80,7 +83,7 @@ class OwnedProcess:
         finally:
             started = time.monotonic()
             try:
-                async with asyncio.timeout(CLEANUP_SECONDS):
+                async with asyncio.timeout(self.cleanup_seconds):
                     if self.process is None and spawn is not None:
                         self.process = await asyncio.shield(spawn)
                     if self.process is not None:

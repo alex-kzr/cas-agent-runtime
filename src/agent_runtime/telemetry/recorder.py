@@ -141,6 +141,12 @@ class RunLock:
 class Recorder:
     # Analysis runs project every event/document through an allowlist before any write.
     private = False
+    # Optional write budgets (mean-review scope only). Class defaults keep Recorder.__new__
+    # instances, as the private worker builds them, and every existing caller unbounded as before.
+    event_limit = None  # absolute ceiling for seq: the event numbered above it is not written
+    event_limit_code = None  # numeric reason reported when event_limit is reached
+    journal_limit = None  # ceiling for the bytes appended to events.jsonl by this instance
+    _journal_bytes = 0
 
     def __init__(
         self, data_dir: Path, request: ExecutionRequest, secrets=(), *, local: bool = False
@@ -250,6 +256,12 @@ class Recorder:
     def event(self, event_type: str, payload: dict[str, Any], source: str = "application") -> None:
         if self.private:
             payload = analysis_privacy.event(event_type, payload)
+        if self.event_limit is not None and self.seq >= self.event_limit:
+            # Checked before anything is serialized or written; numeric reason only.
+            from agent_runtime.tasks import review_profile
+
+            code = self.event_limit_code or review_profile.PARENT_EVENTS
+            raise review_profile.BudgetExceeded(code)
         self.seq += 1
         event = {
             "schema_version": 1,
@@ -272,10 +284,17 @@ class Recorder:
                 "original_size_bytes": len(encoded.encode("utf-8")),
             }
             encoded = json.dumps(event, ensure_ascii=False, allow_nan=False)
+        size = len(encoded.encode("utf-8")) + 1
+        if self.journal_limit is not None and self._journal_bytes + size > self.journal_limit:
+            from agent_runtime.tasks import review_profile
+
+            self.seq -= 1  # nothing was written for this event
+            raise review_profile.BudgetExceeded(review_profile.WORKER_JOURNAL)
         with (self.directory / "events.jsonl").open("a", encoding="utf-8", newline="\n") as stream:
             stream.write(encoded + "\n")
             stream.flush()
             os.fsync(stream.fileno())
+        self._journal_bytes += size
 
     def transition(self, target: State) -> None:
         current = State(self.record["status"])
