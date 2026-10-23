@@ -12,7 +12,7 @@ import json
 import math
 import re
 
-from agent_runtime.tasks import review_profile
+from agent_runtime.tasks import review_profile, vs_review_profile
 from agent_runtime.tasks.models import sdk_succeeded
 
 SCENARIO = "sdk.repository-analysis"
@@ -628,11 +628,15 @@ def accepted_text(instructions, raw, profile=None):
             if instructions != profile.query_text:
                 return None
             sources, questions = dict(profile.sources), [profile.question_key]
+            repository = profile.repository
             raw_limit, canonical_limit = profile.max_raw_final_bytes, profile.max_canonical_bytes
         else:
-            if review_profile.is_scope_query(instructions):
+            if review_profile.is_scope_query(instructions) or vs_review_profile.is_scope_query(
+                instructions
+            ):
                 return None  # A scoped query must carry its profile; never fall back to SAMPLE.
             raw_limit, canonical_limit = MAX_RESPONSE_BYTES, None
+            repository = None
         if not isinstance(raw, str) or len(raw.encode("utf-8")) > raw_limit:
             return None
         if profile is None:
@@ -647,7 +651,7 @@ def accepted_text(instructions, raw, profile=None):
             if len(questions) != 1 or instructions != query_text(sources, questions[0]):
                 return None
         value = json.loads(raw, object_pairs_hook=unique)
-        validate_for(questions[0], value, sources)
+        validate_for(questions[0], value, sources, repository)
         canonical = json.dumps(value, ensure_ascii=False, sort_keys=True, separators=(",", ":"))
         if canonical_limit is not None and len(canonical.encode("utf-8")) > canonical_limit:
             return None

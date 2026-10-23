@@ -5,7 +5,7 @@ import json
 import os
 from dataclasses import asdict, replace
 
-from agent_runtime.tasks import review_profile
+from agent_runtime.tasks import review_profile, vs_review_profile
 from agent_runtime.tasks.models import Limits, WorkerCleanupError, sdk_succeeded
 from agent_runtime.tasks.repository_analysis import (
     FINDINGS_QUESTIONS,
@@ -57,6 +57,11 @@ def snapshot_digest(sources):
 
 
 def checked_sources(sources, profile=None):
+    if isinstance(profile, vs_review_profile.VsReviewProfile):
+        # Fixed two-file scope: exact names, order, bytes and hashes; never SAMPLE or a subset.
+        if type(sources) is not dict:
+            raise ValueError("Snapshot differs from the approved VS review manifest")
+        return profile.bind(sources).sources
     if profile is not None:
         # Mean-review scope: exactly the approved fixture bytes, never SAMPLE and never a subset.
         if sources != profile.sources or any(type(v) is not str for v in sources.values()):
@@ -82,6 +87,8 @@ def build_payload(sources, question, profile=None):
     if profile is not None:
         if question != profile.question_key:
             raise ValueError("Unsupported analysis question for this scope")
+        if isinstance(profile, vs_review_profile.VsReviewProfile):
+            return profile.bind(sources).payload()
         return profile.payload()
     if type(question) is not str or question not in QUESTIONS:
         raise ValueError("Unsupported analysis question")
@@ -138,8 +145,12 @@ class SnapshotSDKAdapter:
         environment=None,
         profile=None,
     ):
-        self.profile = profile
         self.sources = checked_sources(sources, profile)
+        if isinstance(profile, vs_review_profile.VsReviewProfile):
+            # The manifest-only profile gets the verified bytes bound here, so the parent request
+            # checks and the worker payload use one exact query.
+            profile = profile.bind(self.sources)
+        self.profile = profile
         self.question, self.on_report = question, on_report
         self.factory, self.environment = supervised_factory, environment
         self.report = None
@@ -161,7 +172,7 @@ class SnapshotSDKAdapter:
         if profile is None:
             require_release()  # Before auth/environment/provider construction.
         else:
-            review_profile.require_scope_release()
+            profile.require_release()
             if profile.test_only and self.factory is None:
                 raise PermissionError("Test-only review profiles never reach a real provider")
         if request.live_authorized is not True or request.allow_existing_login is not True:
@@ -230,7 +241,9 @@ class SnapshotSDKAdapter:
                 raise AnalysisSDKError("analysis_invalid_response")
             try:
                 value = json.loads(native.text, object_pairs_hook=unique)
-                validate_for(self.question, value, self.sources)
+                validate_for(
+                    self.question, value, self.sources, profile.repository if profile else None
+                )
                 self.on_report(value)
             except (ValueError, TypeError, KeyError, OSError, RecursionError):
                 raise AnalysisSDKError("analysis_invalid_report") from None
@@ -262,6 +275,7 @@ class SnapshotSDKAdapter:
                     self.sources,
                     recorder.run_id,
                     mode="mock-sdk" if self.factory is not None else "sdk",
+                    repository=profile.repository if profile else None,
                 ),
                 checks=[
                     {

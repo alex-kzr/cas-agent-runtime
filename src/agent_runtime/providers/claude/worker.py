@@ -35,7 +35,7 @@ def run_payload(raw):
     payload = json.loads(raw)
     from agent_runtime.providers.claude.auth import require_auth
     from agent_runtime.providers.claude.client import ClaudeAdapter
-    from agent_runtime.tasks import review_profile
+    from agent_runtime.tasks import review_profile, vs_review_profile
     from agent_runtime.tasks.models import ExecutionRequest, Limits
     from agent_runtime.telemetry.recorder import Recorder, atomic_json
 
@@ -50,6 +50,14 @@ def run_payload(raw):
     profile = None
     if payload.get("profile") is not None:
         profile = review_profile.from_payload(payload["profile"])
+        if profile.profile_id == vs_review_profile.PROFILE_ID:
+            # The VS payload is manifest-only: rebuild the verified bytes from the request itself
+            # against the fixed names, sizes, hashes and query identity. Anything else fails here,
+            # before auth or any SDK construction.
+            try:
+                profile = profile.bind_query(request.instructions)
+            except ValueError:
+                return 2
         if (
             request.scenario_id != analysis_privacy.SCENARIO
             or request.model != profile.model

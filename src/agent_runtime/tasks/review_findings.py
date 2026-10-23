@@ -14,6 +14,9 @@ import hashlib
 import json
 import re
 
+from agent_runtime.tasks import vs_review_profile
+
+DEFAULT_REPOSITORY = "tiny-shop"
 REPORT_VERSION = 2
 MAX_FINDINGS = 5
 MIN_FIELD_CHARS = 20
@@ -72,11 +75,28 @@ def screen_text(text, sources):
     return text
 
 
-def validate_findings(value, sources):
+def trusted_repository(repository, sources):
+    """The one repository token a caller's TRUSTED profile may bind; never a free string.
+
+    ``None`` is the legacy default. The fixed VS token is accepted only together with exactly its
+    two approved file names, so neither scope's token can validate the other's sources.
+    """
+    vs_names = set(vs_review_profile.NAMES)
+    if repository is None or repository == DEFAULT_REPOSITORY:
+        if vs_names & set(sources):
+            raise ValueError("Repository does not match the selected files")
+        return DEFAULT_REPOSITORY
+    if repository != vs_review_profile.REPOSITORY or set(sources) != vs_names:
+        raise ValueError("Unknown repository for this report")
+    return repository
+
+
+def validate_findings(value, sources, repository=None):
     """Require a versioned, bounded report whose references match the selected snapshots.
 
     An empty findings list is a valid clean review: a model is never forced to invent a defect.
     It is a statement of what was reported, not proof that the selection is correct.
+    ``repository`` comes from a trusted profile (see ``trusted_repository``); old routes omit it.
     """
     if (
         type(sources) is not dict
@@ -84,12 +104,13 @@ def validate_findings(value, sources):
         or any(type(k) is not str or type(v) is not str for k, v in sources.items())
     ):
         raise ValueError("Invalid approved sources")
+    repository = trusted_repository(repository, sources)
     if (
         type(value) is not dict
         or set(value) != {"report_version", "repository", "findings"}
         or type(value["report_version"]) is not int
         or value["report_version"] != REPORT_VERSION
-        or value["repository"] != "tiny-shop"
+        or value["repository"] != repository
         or type(value["findings"]) is not list
         or len(value["findings"]) > MAX_FINDINGS
     ):
@@ -126,9 +147,9 @@ def escaped(text):
     return text.replace("*", "\\*").replace("_", "\\_")
 
 
-def markdown_lines(value, sources):
+def markdown_lines(value, sources, repository=None):
     """Body lines for a validated report; prose is escaped and links are fixed local paths."""
-    items = validate_findings(value, sources)
+    items = validate_findings(value, sources, repository)
     if not items:
         return ["No findings reported. This is not proof that the selected files are correct.", ""]
     lines = []

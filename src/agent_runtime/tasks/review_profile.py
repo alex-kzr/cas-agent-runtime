@@ -114,6 +114,37 @@ def _positive(name, value):
     return value
 
 
+def validate_bounds(profile):
+    """Shared bound validation: every scope profile (mean, VS) obeys exactly the same rules."""
+    for name in BOUND_FIELDS:
+        if name != "budget_usd":
+            _positive(name, getattr(profile, name))
+    if type(profile.budget_usd) is not str:
+        raise ValueError("budget_usd must be a decimal string")
+    try:
+        budget = Decimal(profile.budget_usd)
+    except InvalidOperation as error:
+        raise ValueError("budget_usd must be finite and positive") from error
+    if not budget.is_finite() or not Decimal("0") < budget <= Decimal("100"):
+        raise ValueError("budget_usd must be finite and in (0, 100]")
+    if (profile.logical_queries, profile.max_turns, profile.observed_turns) != (1, 1, 1):
+        raise ValueError("The scope allows exactly one query and one observed turn")
+    if not (
+        profile.idle_seconds < profile.stream_deadline_seconds < profile.execution_seconds
+        and profile.execution_seconds + profile.cleanup_seconds + profile.finalize_seconds
+        <= profile.watchdog_seconds
+    ):
+        raise ValueError("Inner and outer time bounds are incoherent")
+    if (
+        profile.parent_events < profile.worker_events + MIN_PARENT_OVERHEAD_EVENTS
+        or profile.parent_import_bytes < profile.worker_journal_bytes
+        or profile.max_frames < profile.max_messages
+        or profile.max_wire_bytes < profile.max_frame_bytes
+        or profile.max_raw_final_bytes < profile.max_canonical_bytes
+    ):
+        raise ValueError("Outer event/byte bounds must cover the inner bounds")
+
+
 @dataclass(frozen=True)
 class ReviewProfile:
     profile_id: str = PROFILE_ID
@@ -155,33 +186,7 @@ class ReviewProfile:
                 raise ValueError(f"{name} must be a nonempty string")
         if type(self.test_only) is not bool:
             raise ValueError("test_only must be a boolean")
-        for name in BOUND_FIELDS:
-            if name != "budget_usd":
-                _positive(name, getattr(self, name))
-        if type(self.budget_usd) is not str:
-            raise ValueError("budget_usd must be a decimal string")
-        try:
-            budget = Decimal(self.budget_usd)
-        except InvalidOperation as error:
-            raise ValueError("budget_usd must be finite and positive") from error
-        if not budget.is_finite() or not Decimal("0") < budget <= Decimal("100"):
-            raise ValueError("budget_usd must be finite and in (0, 100]")
-        if (self.logical_queries, self.max_turns, self.observed_turns) != (1, 1, 1):
-            raise ValueError("The scope allows exactly one query and one observed turn")
-        if not (
-            self.idle_seconds < self.stream_deadline_seconds < self.execution_seconds
-            and self.execution_seconds + self.cleanup_seconds + self.finalize_seconds
-            <= self.watchdog_seconds
-        ):
-            raise ValueError("Inner and outer time bounds are incoherent")
-        if (
-            self.parent_events < self.worker_events + MIN_PARENT_OVERHEAD_EVENTS
-            or self.parent_import_bytes < self.worker_journal_bytes
-            or self.max_frames < self.max_messages
-            or self.max_wire_bytes < self.max_frame_bytes
-            or self.max_raw_final_bytes < self.max_canonical_bytes
-        ):
-            raise ValueError("Outer event/byte bounds must cover the inner bounds")
+        validate_bounds(self)
         content = self.source_content.encode("utf-8")
         if (
             self.source_name != SOURCE_NAME
@@ -274,14 +279,27 @@ class ReviewProfile:
             raise ValueError("Only listed bounds can be varied")
         return replace(self, test_only=True, **bounds)
 
+    def require_release(self):
+        require_scope_release()
+
 
 @lru_cache(maxsize=1)
 def canonical():
     return ReviewProfile()
 
 
+def _vs_profile_id():
+    from agent_runtime.tasks import vs_review_profile
+
+    return vs_review_profile.PROFILE_ID
+
+
 def from_payload(value):
     """Rebuild the worker's profile; only the canonical profile or a bound-only test variant."""
+    if type(value) is dict and value.get("profile_id") == _vs_profile_id():
+        from agent_runtime.tasks import vs_review_profile
+
+        return vs_review_profile.from_payload(value)  # its own fixed scope, never a mean profile
     if type(value) is not dict or set(value) != {f.name for f in fields(ReviewProfile)}:
         raise ValueError("Invalid review profile payload")
     candidate = ReviewProfile(**value)
