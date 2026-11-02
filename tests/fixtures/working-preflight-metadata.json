@@ -1,0 +1,142 @@
+{
+  "source": "cas-one-login-series-1 preseal actual readonly metadata 2026-10-29",
+  "receipts": [
+    {
+      "args": [
+        "network",
+        "ls",
+        "--no-trunc",
+        "--quiet"
+      ],
+      "rc": 0,
+      "out": "e6c38be8bda656a08186ad11ca7b39a1db62a275029b8c33f6ffaa6ab3e507cc\n0c4501afcc31365d5d1241ea8a28ed428531d3b6fd6db4f35acfb8531215fd48\n5c2cb513ee66a958fe0aba34dea459a784e8067406ccc4dd6998ab72c3c21da7\ncdf6330a80cfe76423b82a1b8cd601ac4692bb9f261fe3a124c40373e074aa50\n53d3b49c1147321589e5d798238d46966c26ac8dd428a56b057e7b1705874a01\nc9918cb22b854f86d76359eebe4bfe3099cae12b43390e05b4f919c1589c32c0\n40c170b643097138d3f524c403374631d28d24c9cde1e186beff14a45273fed5\n71e9faac7a85d85f918b574417e833708d992324aea57d0a13bd8d0a114e61ba\n03bbf8d039788071815ebffdfa180035cf6f802bd04a1aa12e5680a0da128a47\ne761df45fda2504fc0b82f2c92f866b79fcc99a71f23d110afb58afe01359d66\n679e5283312bb02a639d463e8ee0cc60e9e18fae7481484edb13eee4b189e586\n0029f1618bbf532a42dada68b75434f35aed669074c34c455d32fac3f16dc0c9\n3cb27cf0e0b09eca68a4c103e374fe7be2ca74fdced32539531d8200b05fecb1\n4ece71bb4667a991bc2b44aec4e5f181be8d2d92ed3d4c14a1a753e91b5a0a64\ndd7e7b4d84c0c68322705ca68cf21fb48f476d79f95d4e7b01771f857e5e15d9\n5768dd68b379f5d5bc6c839ab04bdfd111ae1caea3665eabbe463566780d0cbb\ne8a33cce9c64bb34fa5fe5763f7dde0eab493553d39418019cbe1baee7395bb3\n73ec864bbdbd3f6435094bfcb8b9136482c988c8d7a5941bc3dc15845b2b7243\n6c43776851d40417659c74cae96d5219487128dfc17777570a22d29dd4e67f43\na6da723d9744e5f71efd7630f6854700833392d5e722db07b8dda558c11b5ff2\nb01dc5a52d47d323cf066efd2eec66b4eec7d9a47536e29884bf0b6c33a0f47c\n6ff499f48752d1c3d9abf8276635824ea82ad050b6c2c4c3acfb9d7c8769cb5f\n4ac9cd38447f50403916dd72862b3e6b1a89587754e3bed4d0ea610c571ef2af\n3e8744f266ec2525d25cfeec3de30dc66d3ea6ee123e5f21b859d656571026d5\na9c889cddef5823e46468736ee728da2d31ebf5fe49ec770a41cdff91a558741\nec175e7f5df258e529a7360a85575fe37f44a345c65a8af8fa27a35340fb28fe\n516b3204c3105a1c48efc1a36771a78e42b78b7b4dffa449516cf2b2a316dab4\n6a91109932008737f05139533a705d4d01dca5757cb047288e361ae0bd22748b\n0728e46ddfdbfb9625c722affd5fb8d08954ab04d5e2ed56feaf1c1974ed2a48\ne13d29d895206921fbe3df110ecde14933806f6aa9eaa16f69c88ccedc0a6ee3\n020acd4afb7f02071bbac0b94fffc0930f235a7d48f37a0a3cc3b75240f275c6\n",
+      "err": "",
+      "utc": "2026-10-29T06:05:53.807575+00:00"
+    },
+    {
+      "args": [
+        "network",
+        "inspect",
+        "--format",
+        "{\"Id\":{{json .Id}},\"Driver\":{{json .Driver}},\"IPAMConfig\":{{json .IPAM.Config}}}",
+        "0029f1618bbf532a42dada68b75434f35aed669074c34c455d32fac3f16dc0c9",
+        "020acd4afb7f02071bbac0b94fffc0930f235a7d48f37a0a3cc3b75240f275c6",
+        "03bbf8d039788071815ebffdfa180035cf6f802bd04a1aa12e5680a0da128a47",
+        "0728e46ddfdbfb9625c722affd5fb8d08954ab04d5e2ed56feaf1c1974ed2a48",
+        "0c4501afcc31365d5d1241ea8a28ed428531d3b6fd6db4f35acfb8531215fd48",
+        "3cb27cf0e0b09eca68a4c103e374fe7be2ca74fdced32539531d8200b05fecb1",
+        "3e8744f266ec2525d25cfeec3de30dc66d3ea6ee123e5f21b859d656571026d5",
+        "40c170b643097138d3f524c403374631d28d24c9cde1e186beff14a45273fed5",
+        "4ac9cd38447f50403916dd72862b3e6b1a89587754e3bed4d0ea610c571ef2af",
+        "4ece71bb4667a991bc2b44aec4e5f181be8d2d92ed3d4c14a1a753e91b5a0a64",
+        "516b3204c3105a1c48efc1a36771a78e42b78b7b4dffa449516cf2b2a316dab4",
+        "53d3b49c1147321589e5d798238d46966c26ac8dd428a56b057e7b1705874a01",
+        "5768dd68b379f5d5bc6c839ab04bdfd111ae1caea3665eabbe463566780d0cbb",
+        "5c2cb513ee66a958fe0aba34dea459a784e8067406ccc4dd6998ab72c3c21da7",
+        "679e5283312bb02a639d463e8ee0cc60e9e18fae7481484edb13eee4b189e586",
+        "6a91109932008737f05139533a705d4d01dca5757cb047288e361ae0bd22748b",
+        "6c43776851d40417659c74cae96d5219487128dfc17777570a22d29dd4e67f43",
+        "6ff499f48752d1c3d9abf8276635824ea82ad050b6c2c4c3acfb9d7c8769cb5f",
+        "71e9faac7a85d85f918b574417e833708d992324aea57d0a13bd8d0a114e61ba",
+        "73ec864bbdbd3f6435094bfcb8b9136482c988c8d7a5941bc3dc15845b2b7243",
+        "a6da723d9744e5f71efd7630f6854700833392d5e722db07b8dda558c11b5ff2",
+        "a9c889cddef5823e46468736ee728da2d31ebf5fe49ec770a41cdff91a558741",
+        "b01dc5a52d47d323cf066efd2eec66b4eec7d9a47536e29884bf0b6c33a0f47c",
+        "c9918cb22b854f86d76359eebe4bfe3099cae12b43390e05b4f919c1589c32c0",
+        "cdf6330a80cfe76423b82a1b8cd601ac4692bb9f261fe3a124c40373e074aa50",
+        "dd7e7b4d84c0c68322705ca68cf21fb48f476d79f95d4e7b01771f857e5e15d9",
+        "e13d29d895206921fbe3df110ecde14933806f6aa9eaa16f69c88ccedc0a6ee3",
+        "e6c38be8bda656a08186ad11ca7b39a1db62a275029b8c33f6ffaa6ab3e507cc",
+        "e761df45fda2504fc0b82f2c92f866b79fcc99a71f23d110afb58afe01359d66",
+        "e8a33cce9c64bb34fa5fe5763f7dde0eab493553d39418019cbe1baee7395bb3",
+        "ec175e7f5df258e529a7360a85575fe37f44a345c65a8af8fa27a35340fb28fe"
+      ],
+      "rc": 0,
+      "out": "{\"Id\":\"0029f1618bbf532a42dada68b75434f35aed669074c34c455d32fac3f16dc0c9\",\"Driver\":\"bridge\",\"IPAMConfig\":[{\"Gateway\":\"192.168.16.1\",\"Subnet\":\"192.168.16.0/20\"}]}\n{\"Id\":\"020acd4afb7f02071bbac0b94fffc0930f235a7d48f37a0a3cc3b75240f275c6\",\"Driver\":\"bridge\",\"IPAMConfig\":[{\"Gateway\":\"172.22.0.1\",\"Subnet\":\"172.22.0.0/16\"}]}\n{\"Id\":\"03bbf8d039788071815ebffdfa180035cf6f802bd04a1aa12e5680a0da128a47\",\"Driver\":\"bridge\",\"IPAMConfig\":[{\"Gateway\":\"192.168.128.1\",\"Subnet\":\"192.168.128.0/20\"}]}\n{\"Id\":\"0728e46ddfdbfb9625c722affd5fb8d08954ab04d5e2ed56feaf1c1974ed2a48\",\"Driver\":\"host\",\"IPAMConfig\":null}\n{\"Id\":\"0c4501afcc31365d5d1241ea8a28ed428531d3b6fd6db4f35acfb8531215fd48\",\"Driver\":\"bridge\",\"IPAMConfig\":[{\"Gateway\":\"172.23.0.1\",\"Subnet\":\"172.23.0.0/16\"}]}\n{\"Id\":\"3cb27cf0e0b09eca68a4c103e374fe7be2ca74fdced32539531d8200b05fecb1\",\"Driver\":\"bridge\",\"IPAMConfig\":[{\"Gateway\":\"192.168.32.1\",\"Subnet\":\"192.168.32.0/20\"}]}\n{\"Id\":\"3e8744f266ec2525d25cfeec3de30dc66d3ea6ee123e5f21b859d656571026d5\",\"Driver\":\"bridge\",\"IPAMConfig\":[{\"Gateway\":\"172.28.0.1\",\"Subnet\":\"172.28.0.0/16\"}]}\n{\"Id\":\"40c170b643097138d3f524c403374631d28d24c9cde1e186beff14a45273fed5\",\"Driver\":\"bridge\",\"IPAMConfig\":[{\"Gateway\":\"172.24.0.1\",\"Subnet\":\"172.24.0.0/16\"}]}\n{\"Id\":\"4ac9cd38447f50403916dd72862b3e6b1a89587754e3bed4d0ea610c571ef2af\",\"Driver\":\"bridge\",\"IPAMConfig\":[{\"Gateway\":\"172.26.0.1\",\"Subnet\":\"172.26.0.0/16\"}]}\n{\"Id\":\"4ece71bb4667a991bc2b44aec4e5f181be8d2d92ed3d4c14a1a753e91b5a0a64\",\"Driver\":\"bridge\",\"IPAMConfig\":[{\"Gateway\":\"172.20.0.1\",\"Subnet\":\"172.20.0.0/16\"}]}\n{\"Id\":\"516b3204c3105a1c48efc1a36771a78e42b78b7b4dffa449516cf2b2a316dab4\",\"Driver\":\"bridge\",\"IPAMConfig\":[{\"Gateway\":\"172.27.0.1\",\"Subnet\":\"172.27.0.0/16\"}]}\n{\"Id\":\"53d3b49c1147321589e5d798238d46966c26ac8dd428a56b057e7b1705874a01\",\"Driver\":\"bridge\",\"IPAMConfig\":[{\"Gateway\":\"192.168.48.1\",\"Subnet\":\"192.168.48.0/20\"}]}\n{\"Id\":\"5768dd68b379f5d5bc6c839ab04bdfd111ae1caea3665eabbe463566780d0cbb\",\"Driver\":\"bridge\",\"IPAMConfig\":[{\"Gateway\":\"192.168.208.1\",\"Subnet\":\"192.168.208.0/20\"}]}\n{\"Id\":\"5c2cb513ee66a958fe0aba34dea459a784e8067406ccc4dd6998ab72c3c21da7\",\"Driver\":\"bridge\",\"IPAMConfig\":[{\"Gateway\":\"192.168.96.1\",\"Subnet\":\"192.168.96.0/20\"}]}\n{\"Id\":\"679e5283312bb02a639d463e8ee0cc60e9e18fae7481484edb13eee4b189e586\",\"Driver\":\"bridge\",\"IPAMConfig\":[{\"Gateway\":\"192.168.0.1\",\"Subnet\":\"192.168.0.0/20\"}]}\n{\"Id\":\"6a91109932008737f05139533a705d4d01dca5757cb047288e361ae0bd22748b\",\"Driver\":\"bridge\",\"IPAMConfig\":[{\"Gateway\":\"172.29.0.1\",\"Subnet\":\"172.29.0.0/16\"}]}\n{\"Id\":\"6c43776851d40417659c74cae96d5219487128dfc17777570a22d29dd4e67f43\",\"Driver\":\"bridge\",\"IPAMConfig\":[{\"Gateway\":\"192.168.192.1\",\"Subnet\":\"192.168.192.0/20\"}]}\n{\"Id\":\"6ff499f48752d1c3d9abf8276635824ea82ad050b6c2c4c3acfb9d7c8769cb5f\",\"Driver\":\"bridge\",\"IPAMConfig\":[{\"Gateway\":\"172.21.0.1\",\"Subnet\":\"172.21.0.0/16\"}]}\n{\"Id\":\"71e9faac7a85d85f918b574417e833708d992324aea57d0a13bd8d0a114e61ba\",\"Driver\":\"bridge\",\"IPAMConfig\":[{\"Gateway\":\"172.31.0.1\",\"Subnet\":\"172.31.0.0/16\"}]}\n{\"Id\":\"73ec864bbdbd3f6435094bfcb8b9136482c988c8d7a5941bc3dc15845b2b7243\",\"Driver\":\"bridge\",\"IPAMConfig\":[{\"Gateway\":\"192.168.224.1\",\"Subnet\":\"192.168.224.0/20\"}]}\n{\"Id\":\"a6da723d9744e5f71efd7630f6854700833392d5e722db07b8dda558c11b5ff2\",\"Driver\":\"bridge\",\"IPAMConfig\":[{\"Gateway\":\"192.168.176.1\",\"Subnet\":\"192.168.176.0/20\"}]}\n{\"Id\":\"a9c889cddef5823e46468736ee728da2d31ebf5fe49ec770a41cdff91a558741\",\"Driver\":\"bridge\",\"IPAMConfig\":[{\"Gateway\":\"172.25.0.1\",\"Subnet\":\"172.25.0.0/16\"}]}\n{\"Id\":\"b01dc5a52d47d323cf066efd2eec66b4eec7d9a47536e29884bf0b6c33a0f47c\",\"Driver\":\"bridge\",\"IPAMConfig\":[{\"Gateway\":\"192.168.160.1\",\"Subnet\":\"192.168.160.0/20\"}]}\n{\"Id\":\"c9918cb22b854f86d76359eebe4bfe3099cae12b43390e05b4f919c1589c32c0\",\"Driver\":\"bridge\",\"IPAMConfig\":[{\"Gateway\":\"192.168.80.1\",\"Subnet\":\"192.168.80.0/20\"}]}\n{\"Id\":\"cdf6330a80cfe76423b82a1b8cd601ac4692bb9f261fe3a124c40373e074aa50\",\"Driver\":\"bridge\",\"IPAMConfig\":[{\"Gateway\":\"192.168.112.1\",\"Subnet\":\"192.168.112.0/20\"}]}\n{\"Id\":\"dd7e7b4d84c0c68322705ca68cf21fb48f476d79f95d4e7b01771f857e5e15d9\",\"Driver\":\"bridge\",\"IPAMConfig\":[{\"Gateway\":\"172.18.0.1\",\"Subnet\":\"172.18.0.0/16\"}]}\n{\"Id\":\"e13d29d895206921fbe3df110ecde14933806f6aa9eaa16f69c88ccedc0a6ee3\",\"Driver\":\"null\",\"IPAMConfig\":null}\n{\"Id\":\"e6c38be8bda656a08186ad11ca7b39a1db62a275029b8c33f6ffaa6ab3e507cc\",\"Driver\":\"bridge\",\"IPAMConfig\":[{\"Gateway\":\"172.19.0.1\",\"Subnet\":\"172.19.0.0/16\"}]}\n{\"Id\":\"e761df45fda2504fc0b82f2c92f866b79fcc99a71f23d110afb58afe01359d66\",\"Driver\":\"bridge\",\"IPAMConfig\":[{\"Gateway\":\"192.168.144.1\",\"Subnet\":\"192.168.144.0/20\"}]}\n{\"Id\":\"e8a33cce9c64bb34fa5fe5763f7dde0eab493553d39418019cbe1baee7395bb3\",\"Driver\":\"bridge\",\"IPAMConfig\":[{\"Gateway\":\"172.17.0.1\",\"Subnet\":\"172.17.0.0/16\"}]}\n{\"Id\":\"ec175e7f5df258e529a7360a85575fe37f44a345c65a8af8fa27a35340fb28fe\",\"Driver\":\"bridge\",\"IPAMConfig\":[{\"Gateway\":\"172.30.0.1\",\"Subnet\":\"172.30.0.0/16\"}]}\n",
+      "err": "",
+      "utc": "2026-10-29T06:05:53.972807+00:00"
+    },
+    {
+      "args": [
+        "network",
+        "ls",
+        "--no-trunc",
+        "--quiet"
+      ],
+      "rc": 0,
+      "out": "e6c38be8bda656a08186ad11ca7b39a1db62a275029b8c33f6ffaa6ab3e507cc\n0c4501afcc31365d5d1241ea8a28ed428531d3b6fd6db4f35acfb8531215fd48\n5c2cb513ee66a958fe0aba34dea459a784e8067406ccc4dd6998ab72c3c21da7\ncdf6330a80cfe76423b82a1b8cd601ac4692bb9f261fe3a124c40373e074aa50\n53d3b49c1147321589e5d798238d46966c26ac8dd428a56b057e7b1705874a01\nc9918cb22b854f86d76359eebe4bfe3099cae12b43390e05b4f919c1589c32c0\n40c170b643097138d3f524c403374631d28d24c9cde1e186beff14a45273fed5\n71e9faac7a85d85f918b574417e833708d992324aea57d0a13bd8d0a114e61ba\n03bbf8d039788071815ebffdfa180035cf6f802bd04a1aa12e5680a0da128a47\ne761df45fda2504fc0b82f2c92f866b79fcc99a71f23d110afb58afe01359d66\n679e5283312bb02a639d463e8ee0cc60e9e18fae7481484edb13eee4b189e586\n0029f1618bbf532a42dada68b75434f35aed669074c34c455d32fac3f16dc0c9\n3cb27cf0e0b09eca68a4c103e374fe7be2ca74fdced32539531d8200b05fecb1\n4ece71bb4667a991bc2b44aec4e5f181be8d2d92ed3d4c14a1a753e91b5a0a64\ndd7e7b4d84c0c68322705ca68cf21fb48f476d79f95d4e7b01771f857e5e15d9\n5768dd68b379f5d5bc6c839ab04bdfd111ae1caea3665eabbe463566780d0cbb\ne8a33cce9c64bb34fa5fe5763f7dde0eab493553d39418019cbe1baee7395bb3\n73ec864bbdbd3f6435094bfcb8b9136482c988c8d7a5941bc3dc15845b2b7243\n6c43776851d40417659c74cae96d5219487128dfc17777570a22d29dd4e67f43\na6da723d9744e5f71efd7630f6854700833392d5e722db07b8dda558c11b5ff2\nb01dc5a52d47d323cf066efd2eec66b4eec7d9a47536e29884bf0b6c33a0f47c\n6ff499f48752d1c3d9abf8276635824ea82ad050b6c2c4c3acfb9d7c8769cb5f\n4ac9cd38447f50403916dd72862b3e6b1a89587754e3bed4d0ea610c571ef2af\n3e8744f266ec2525d25cfeec3de30dc66d3ea6ee123e5f21b859d656571026d5\na9c889cddef5823e46468736ee728da2d31ebf5fe49ec770a41cdff91a558741\nec175e7f5df258e529a7360a85575fe37f44a345c65a8af8fa27a35340fb28fe\n516b3204c3105a1c48efc1a36771a78e42b78b7b4dffa449516cf2b2a316dab4\n6a91109932008737f05139533a705d4d01dca5757cb047288e361ae0bd22748b\n0728e46ddfdbfb9625c722affd5fb8d08954ab04d5e2ed56feaf1c1974ed2a48\ne13d29d895206921fbe3df110ecde14933806f6aa9eaa16f69c88ccedc0a6ee3\n020acd4afb7f02071bbac0b94fffc0930f235a7d48f37a0a3cc3b75240f275c6\n",
+      "err": "",
+      "utc": "2026-10-29T06:05:54.054201+00:00"
+    },
+    {
+      "args": [
+        "image",
+        "inspect",
+        "--format",
+        "{\"Id\":{{json .Id}},\"Os\":{{json .Os}},\"Architecture\":{{json .Architecture}},\"RootFS\":{{json .RootFS}}}",
+        "sha256:7d7021a2980964ffee2776efb3705a17bc7406569d1cc6fd7d740f4630a0d877"
+      ],
+      "rc": 0,
+      "out": "{\"Id\":\"sha256:7d7021a2980964ffee2776efb3705a17bc7406569d1cc6fd7d740f4630a0d877\",\"Os\":\"linux\",\"Architecture\":\"amd64\",\"RootFS\":{\"Layers\":[\"sha256:ea680fbff095473bb8a6c867938d6d851e11ef0c177fce983ccc83440172bd72\",\"sha256:8f752ea4c4bdbd4d6ad369e9d5fa1fb05008f63252c8187cf8025653b8d7b7b3\",\"sha256:0d3e139ff0286aee05a5abbfe1b318f46d4d53030d046cf815be874d0a7fc197\",\"sha256:de4389417aed217eaa76e2b8362b44d79f3e81d4d2593f41ef7ba34607a13b46\",\"sha256:d2c1a63f6a682c37a4ad47c69239458f7780ffb272a9e7a965022ca9f4f58152\",\"sha256:5ee1fb09687f217a21fe7058b51553ffb2e73ba3585456f0cba9b4e5cc6da43f\",\"sha256:91a0190a38a8bf016dc9bae52d88cf4341855ee55ee6f4ad4b16230e64485942\",\"sha256:6a7119f1dd5493e2b1c3652a31676d2781fc27a32a27be399e9cdaeebe90e424\",\"sha256:3bcb70fab5ce47974d36752890b74e49e68c29b6d98a0c753254baddaa0c4dba\",\"sha256:fccfd9511eabff9a3544b62c7e787cf4e6e2d375be5b4d16dcf9957589a78700\",\"sha256:4d90c678c172064d6139613f7f4d2f22beae582579169591cd3fc52f8f53a05e\",\"sha256:6185709c8c57f42e502cbe23b2596d7a34e88f3bb41391f7b48157da4b8418a7\",\"sha256:46ed4e897d639b557a398838eeea557753f3803372fa929e956d9d06260f05c1\",\"sha256:3e02110548b673c5c81b1213aa433d18ca259b9e7238cade53e314589ba07eec\",\"sha256:b6d1a91277382e8f6388d81144ece7e807ade6151f5d1488bf6ff54ba969a520\",\"sha256:5e22dffb9ae0f937744e6eb138d582632233f307f2327ef71acd2c340b6a773e\",\"sha256:f3ee1897f26211f1dca70d4132efc0c0aca5701d9ce2c190383404d5ea1038b5\",\"sha256:05c71d1b6777b04961cbf89fb012caccd97eab219226b6839cf265f5f3ff9db7\",\"sha256:050ed27a2ee61b58aecd8e13ea7088dc167238bce6fe180d25b442166f4e4146\"],\"Type\":\"layers\"}}\n",
+      "err": "",
+      "utc": "2026-10-29T06:05:54.143447+00:00"
+    },
+    {
+      "args": [
+        "info",
+        "--format",
+        "{\"ServerVersion\":{{json .ServerVersion}},\"OSType\":{{json .OSType}},\"Architecture\":{{json .Architecture}},\"KernelVersion\":{{json .KernelVersion}},\"CgroupVersion\":{{json .CgroupVersion}},\"SecurityOptions\":{{json .SecurityOptions}},\"DefaultRuntime\":{{json .DefaultRuntime}}}"
+      ],
+      "rc": 0,
+      "out": "{\"ServerVersion\":\"29.9.2\",\"OSType\":\"linux\",\"Architecture\":\"x86_64\",\"KernelVersion\":\"6.18.54.1-microsoft-standard-WSL2\",\"CgroupVersion\":\"2\",\"SecurityOptions\":[\"name=seccomp,profile=builtin\",\"name=cgroupns\"],\"DefaultRuntime\":\"runc\"}\n",
+      "err": "",
+      "utc": "2026-10-29T06:05:54.237404+00:00"
+    },
+    {
+      "args": [
+        "version",
+        "--format",
+        "{{json .Server}}"
+      ],
+      "rc": 0,
+      "out": "{\"Platform\":{\"Name\":\"Docker Desktop 4.97.0 (244584)\"},\"Version\":\"29.9.2\",\"ApiVersion\":\"1.56\",\"MinAPIVersion\":\"1.40\",\"Os\":\"linux\",\"Arch\":\"amd64\",\"Components\":[{\"Name\":\"Engine\",\"Version\":\"29.9.2\",\"Details\":{\"ApiVersion\":\"1.56\",\"Arch\":\"amd64\",\"BuildTime\":\"Tue Oct 20 18:45:02 2026\",\"Experimental\":\"false\",\"GitCommit\":\"0367cbe\",\"GoVersion\":\"go1.26.10\",\"KernelVersion\":\"6.18.54.1-microsoft-standard-WSL2\",\"MinAPIVersion\":\"1.40\",\"Module\":\"github.com/moby/moby/v2\",\"ModuleVersion\":\"v2.0.0+unknown\",\"Os\":\"linux\"}},{\"Name\":\"containerd\",\"Version\":\"v2.4.2\",\"Details\":{\"GitCommit\":\"b7a25261e029d68978bbf290df0a62fc819b3c51\"}},{\"Name\":\"runc\",\"Version\":\"1.5.2\",\"Details\":{\"GitCommit\":\"v1.5.2-0-g29dd3dc2\"}},{\"Name\":\"docker-init\",\"Version\":\"0.19.0\",\"Details\":{\"GitCommit\":\"de40ad0\"}}],\"GitCommit\":\"0367cbe\",\"GoVersion\":\"go1.26.10\",\"KernelVersion\":\"6.18.54.1-microsoft-standard-WSL2\",\"BuildTime\":\"2026-10-20T18:45:02.000000000+00:00\"}\n",
+      "err": "",
+      "utc": "2026-10-29T06:05:54.358298+00:00"
+    },
+    {
+      "args": [
+        "image",
+        "inspect",
+        "--format",
+        "{\"Id\":{{json .Id}},\"HasVolumes\":{{if (index .Config \"Volumes\")}}true{{else}}false{{end}},\"HasExposedPorts\":{{if (index .Config \"ExposedPorts\")}}true{{else}}false{{end}}}",
+        "sha256:7d7021a2980964ffee2776efb3705a17bc7406569d1cc6fd7d740f4630a0d877"
+      ],
+      "rc": 0,
+      "out": "{\"Id\":\"sha256:7d7021a2980964ffee2776efb3705a17bc7406569d1cc6fd7d740f4630a0d877\",\"HasVolumes\":false,\"HasExposedPorts\":false}\n",
+      "err": "",
+      "utc": "2026-10-29T06:05:54.425840+00:00"
+    }
+  ],
+  "routes": [
+    "127.0.0.0/8",
+    "127.0.0.1/32",
+    "127.255.255.255/32",
+    "172.25.144.0/20",
+    "172.25.144.1/32",
+    "172.25.159.255/32",
+    "172.26.48.0/20",
+    "172.26.48.1/32",
+    "172.26.63.255/32",
+    "192.168.1.0/24",
+    "192.168.1.10/32",
+    "192.168.1.255/32",
+    "224.0.0.0/4",
+    "224.0.0.0/4",
+    "224.0.0.0/4",
+    "224.0.0.0/4",
+    "255.255.255.255/32",
+    "255.255.255.255/32",
+    "255.255.255.255/32",
+    "255.255.255.255/32"
+  ]
+}

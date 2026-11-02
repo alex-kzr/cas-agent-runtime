@@ -16,6 +16,9 @@ build-backend = "hatchling.build"
 [tool.hatch.build.targets.wheel]
 packages = ["src/agent_runtime"]
 
+[tool.hatch.build.targets.sdist.force-include]
+"src/agent_runtime/providers/claude/working_cells/metadata" = "src/agent_runtime/providers/claude/working_cells/metadata"
+
 [dependency-groups]
 dev = ["ruff>=0.14,<1"]
 

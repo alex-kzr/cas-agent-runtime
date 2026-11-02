@@ -1,0 +1,13 @@
+[
+  "PATH=/usr/local/bin:/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin",
+  "LANG=C.UTF-8",
+  "GPG_KEY=7169605F62C751356D054A26A821E680E5FA6305",
+  "PYTHON_VERSION=3.12.9",
+  "PYTHON_SHA256=7220835d9f90b37c006e9842a8dff4580aaca4318674f947302b8d28f3f81112",
+  "PYTHONDONTWRITEBYTECODE=1",
+  "PYTHONUNBUFFERED=1",
+  "HOME=/home/cas",
+  "CLAUDE_CONFIG_DIR=/home/cas/.claude",
+  "XDG_CONFIG_HOME=/home/cas/.config",
+  "CAS_DATA_DIR=/var/lib/cas"
+]

@@ -24,7 +24,7 @@ def bounded_result(result, recorder, instructions=None, profile=None):
 
 def main():
     # Ownership handshake first: do not import/construct SDK before the parent has
-    # assigned this process to its non-breakaway Job Object and released stdin.
+    # contained this process (Windows Job Object/Linux PID namespace) and released stdin.
     raw = sys.stdin.buffer.read(1_000_001)
     return run_payload(raw)
 

@@ -99,6 +99,30 @@ def parser() -> argparse.ArgumentParser:
     console.add_argument(
         "--enable-tasks", action="store_true", help="Opt in to coding fixture task control"
     )
+    console.add_argument(
+        "--enable-working-sessions",
+        action="store_true",
+        help="Finite prepared text tasks for one local owner",
+    )
+    working = commands.add_parser(
+        "working-session", help="One temporary profile for one or two prepared text tasks"
+    ).add_subparsers(dest="action", required=True)
+    create = working.add_parser("create")
+    create.add_argument("--title", default="Working session")
+    add = working.add_parser("add")
+    add.add_argument("session_id")
+    add.add_argument("--title", required=True)
+    add.add_argument("--file", type=Path, required=True)
+    for name in ("prepare", "inspect", "scope", "end", "cancel"):
+        item = working.add_parser(name)
+        item.add_argument("session_id")
+        if name in {"end", "cancel"}:
+            item.add_argument("--plan-hash")
+    working.add_parser("list")
+    run = working.add_parser("run")
+    run.add_argument("session_id")
+    run.add_argument("--approval", type=Path)
+    run.add_argument("--allow-live", action="store_true")
     return result
 
 
@@ -121,7 +145,43 @@ def main(argv=None) -> int:
                 "max_budget_usd": getattr(args, "max_budget_usd", None),
             },
         )
-        if args.command == "doctor":
+        if args.command == "working-session":
+            if cfg.auth_mode != "subscription" or cfg.login_config_dir is not None:
+                raise PermissionError(
+                    "Working sessions use only a new isolated subscription profile"
+                )
+            from agent_runtime.tasks.working_sessions import WorkingSessions, safe_path
+
+            sessions = WorkingSessions(cfg.data_dir, root=root)
+            if args.action == "create":
+                value = sessions.create(args.title)
+            elif args.action == "add":
+                file = safe_path(args.file)
+                if (
+                    file.name.lower().find("credential") >= 0
+                    or any(p.lower() in {".claude", ".codex", ".aws", ".ssh"} for p in file.parts)
+                    or file.stat().st_size > 2048
+                ):
+                    raise ValueError("BOUNDED_NONSENSITIVE_TASK_FILE_REQUIRED")
+                value = sessions.add(
+                    args.session_id, title=args.title, prompt=file.read_text(encoding="utf-8")
+                )
+            elif args.action == "prepare":
+                value = sessions.prepare(args.session_id)
+            elif args.action == "list":
+                value = sessions.list()
+            elif args.action == "inspect":
+                value = sessions.get(args.session_id)
+            elif args.action == "scope":
+                value = sessions.scope(args.session_id)
+            elif args.action in {"end", "cancel"}:
+                value = sessions.request(args.session_id, args.plan_hash, end=args.action == "end")
+            else:
+                value = sessions.run(args.session_id, args.approval, allow_live=args.allow_live)
+                output(value)
+                return 0 if value["status"] == "COMPLETED" else 1
+            output(value)
+        elif args.command == "doctor":
             checks = []
             for package in ("claude-agent-sdk", "jsonschema"):
                 try:
@@ -294,7 +354,15 @@ def main(argv=None) -> int:
             )
             output({"report": str(path)})
         elif args.command == "console":
-            if args.enable_tasks:
+            if args.enable_tasks and args.enable_working_sessions:
+                raise ValueError("Choose one console control mode")
+            if args.enable_working_sessions and (
+                cfg.auth_mode != "subscription" or cfg.login_config_dir is not None
+            ):
+                raise PermissionError(
+                    "Working sessions use only a new isolated subscription profile"
+                )
+            if args.enable_tasks or args.enable_working_sessions:
                 from importlib.util import find_spec
 
                 if find_spec("agent_console") is None:
@@ -312,7 +380,10 @@ def main(argv=None) -> int:
                         cfg.console_host,
                         "--port",
                         str(cfg.console_port),
-                        "--enable-tasks",
+                        "--enable-working-sessions"
+                        if args.enable_working_sessions
+                        else "--enable-tasks",
+                        *(["--root", str(root)] if args.enable_working_sessions else []),
                     ]
                 )
             executable = shutil.which("cas-console")

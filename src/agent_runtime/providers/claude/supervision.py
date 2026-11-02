@@ -1,8 +1,9 @@
-"""Bounded SDK-worker ownership. Windows verified; other platforms fail closed."""
+"""Bounded SDK ownership: Windows Job Object or dedicated Linux PID namespace."""
 
 import asyncio
 import os
 import subprocess
+import sys
 import time
 
 CLEANUP_SECONDS = 3.0
@@ -16,19 +17,21 @@ class OwnedProcess:
         self.process = None
         self.released = False
         self.cleanup = {
-            "mechanism": "windows-job",
+            "mechanism": "linux-pid-namespace" if sys.platform == "linux" else "windows-job",
             "tree_empty": False,
             "forced": False,
             "deadline_seconds": cleanup_seconds,
         }
 
     async def run(self, command, payload, environment, *, stderr_sink=None):
-        if os.name != "nt":
-            raise RuntimeError(
-                "Supervised live execution currently requires Windows Job Object support"
-            )
         if len(payload) > 1_000_000:
             raise ValueError("Worker input exceeds 1 MB")
+        if sys.platform == "linux":
+            from agent_runtime.providers.claude.linux_supervision import run_linux
+
+            return await run_linux(self, command, payload, environment, stderr_sink)
+        if os.name != "nt":
+            raise RuntimeError("Supervision requires Windows or a dedicated Linux container")
         from agent_runtime.providers.claude.windows_job import WindowsJob
 
         job = WindowsJob()

@@ -1,6 +1,8 @@
 """Explicit personal subscription vs API selection; never copies native credentials."""
 
 import json
+import os
+import platform
 import subprocess
 from importlib.resources import files
 from pathlib import Path
@@ -27,9 +29,15 @@ SUBSCRIPTION_SETTINGS = {"forceLoginMethod": "claudeai"}
 
 
 def native_cli():
-    path = Path(str(files("claude_agent_sdk").joinpath("_bundled", "claude.exe")))
+    system = platform.system()
+    if system not in {"Windows", "Linux"}:
+        raise ValueError("Bundled Claude CLI is supported on Windows and Linux only")
+    name = "claude.exe" if system == "Windows" else "claude"
+    path = Path(str(files("claude_agent_sdk").joinpath("_bundled", name)))
     if not path.is_file():
         raise ValueError("Pinned bundled Claude CLI is required; no PATH fallback")
+    if system == "Linux" and not os.access(path, os.X_OK):
+        raise ValueError("Bundled Linux Claude CLI must be executable")
     return path
 
 
