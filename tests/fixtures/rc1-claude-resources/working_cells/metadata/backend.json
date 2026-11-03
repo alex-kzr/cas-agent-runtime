@@ -1,0 +1,1 @@
+{"ServerVersion":"29.9.2","OSType":"linux","Architecture":"x86_64","KernelVersion":"6.18.54.1-microsoft-standard-WSL2","CgroupVersion":"2","SecurityOptions":["name=seccomp,profile=builtin","name=cgroupns"],"DefaultRuntime":"runc"}

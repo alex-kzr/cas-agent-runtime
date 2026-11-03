@@ -8,6 +8,7 @@ as metadata, never reproduced from content.
 import hashlib
 import json
 import os
+import shutil
 import tempfile
 import unittest
 from pathlib import Path
@@ -17,6 +18,15 @@ from agent_runtime.tasks import review_profile
 from agent_runtime.tasks import vs_review_profile as vs
 
 API, SPEC = vs.NAMES
+
+
+def make_junction(target, link):
+    """Directory junction: a real reparse point creatable without symlink privilege."""
+    try:
+        import _winapi
+    except ImportError:
+        raise OSError("junctions unavailable") from None
+    _winapi.CreateJunction(str(target), str(link))
 API_TEXT = "export const fixture = 1;\r\nexport const other = 2;\n"
 SPEC_TEXT = "// unrelated synthetic test text\r\nconst value = 1;\nconst second = 2;\n"
 SYNTHETIC = {API: API_TEXT, SPEC: SPEC_TEXT}
@@ -464,7 +474,16 @@ class VerifiedReadTests(unittest.TestCase):
         try:
             target.symlink_to(outside)
         except (OSError, NotImplementedError):
-            self.skipTest("symlinks unavailable")
+            # Without symlink privilege, reach the source through a junctioned parent instead.
+            source_dir = target.parent
+            moved = Path(self.temp.name) / "outside-src"
+            shutil.move(str(source_dir), str(moved))
+            (moved / target.name).write_bytes(self.raw[API])
+            try:
+                make_junction(moved, source_dir)
+            except OSError:
+                self.skipTest("symlinks and junctions unavailable")
+            self.addCleanup(os.rmdir, source_dir)  # removes the junction only, not its target
         with self.assertRaises(ValueError):
             self.read()
 
@@ -485,7 +504,11 @@ class VerifiedReadTests(unittest.TestCase):
         try:
             link.symlink_to(self.root, target_is_directory=True)
         except (OSError, NotImplementedError):
-            self.skipTest("symlinks unavailable")
+            try:
+                make_junction(self.root, link)
+            except OSError:
+                self.skipTest("symlinks and junctions unavailable")
+        self.addCleanup(lambda: link.exists() and os.rmdir(link))
         with self.assertRaises(ValueError):
             vs.read_manifest_files(link, self.manifest)
 

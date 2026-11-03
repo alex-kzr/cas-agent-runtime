@@ -8,7 +8,7 @@ ROOT = Path(__file__).parent
 POLICY = json.loads((ROOT / "policy.json").read_text(encoding="utf-8"))
 if not isinstance(POLICY.get("tasks"), list) or not 1 <= len(POLICY["tasks"]) <= 2:
     raise ValueError("ONE_OR_TWO_WORKING_SESSION_TASKS_REQUIRED")
-STAGES = dict(zip(("first", "second")[:len(POLICY["tasks"])], ("work_a", "work_b")))
+STAGES = dict(zip(("first", "second")[:len(POLICY["tasks"])], ("work_a", "work_b"), strict=False))
 EXPECTED_ROOT = Path(POLICY["bundle_root"])
 LOCAL_AUTH = POLICY.get("local_auth_file")
 CLAIM = EXPECTED_ROOT / "attempt.claim.json"

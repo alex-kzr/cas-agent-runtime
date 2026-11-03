@@ -1282,6 +1282,19 @@ class _NativeFixture:
 class NativeOrdinaryTests(_NativeFixture, unittest.TestCase):
     """Actual Windows calls on ordinary owned Temp objects. Not reparse coverage."""
 
+    _discovery_checkpoint = None
+
+    def setUp(self):
+        # The explicit stage runner (tools/run_path_policy_checks.py) claims the module-level
+        # CHECKPOINT with a durable sink. Under plain discovery nothing claimed it: run the same
+        # native cases with a class-local in-memory checkpointer instead, leaving CHECKPOINT
+        # unclaimed. Ordering (checkpoint before each creation) is enforced identically.
+        if self.checkpoint is CHECKPOINT and CHECKPOINT.sink is None and not CHECKPOINT.claimed:
+            if NativeOrdinaryTests._discovery_checkpoint is None:
+                NativeOrdinaryTests._discovery_checkpoint = fresh_checkpointer(FakeSink())
+            self.checkpoint = NativeOrdinaryTests._discovery_checkpoint
+        super().setUp()
+
     def test_native_capability(self):
         self.step(wph.WindowsNative)
         self.assertEqual(wph.check_abi(), 0)

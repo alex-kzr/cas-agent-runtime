@@ -1,7 +1,7 @@
 """Apply no-child/no-network guards before importing product modules or fixtures."""
-from pathlib import Path
 import runpy
 import sys
+from pathlib import Path
 from unittest.mock import patch
 
 test = Path(sys.argv[1]) if len(sys.argv)>1 else Path(__file__).with_name('test_crash_reconciliation.py')

@@ -32,3 +32,11 @@ ignore = ["E501"]
 
 [tool.ruff.lint.isort]
 known-first-party = ["agent_runtime"]
+
+[tool.ruff.lint.per-file-ignores]
+# Historical controller source kept verbatim; test_working_lifecycle parses and patches it.
+"tests/fixtures/*" = ["E", "F", "I", "B", "UP"]
+# Reviewed source bytes/line references are pinned in tools/finite-observability reviews;
+# keep their compact style rather than reformatting for lint.
+"src/agent_runtime/tasks/finite_projection.py" = ["E701", "E702"]
+"src/agent_runtime/tasks/working_sessions.py" = ["E701", "E702", "F841", "I001"]

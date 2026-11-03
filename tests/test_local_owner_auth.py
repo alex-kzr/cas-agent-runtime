@@ -6,10 +6,11 @@ import unittest
 from pathlib import Path
 from unittest.mock import patch
 
-from agent_runtime.providers.claude.working_backend import DockerWorkingBackend
-from agent_runtime.telemetry.recorder import atomic_json
-from agent_runtime.tasks.working_sessions import WorkingSessions
 from test_working_sessions import FakeBackend
+
+from agent_runtime.providers.claude.working_backend import DockerWorkingBackend
+from agent_runtime.tasks.working_sessions import WorkingSessions
+from agent_runtime.telemetry.recorder import atomic_json
 
 
 class LocalOwnerTests(unittest.TestCase):
@@ -21,7 +22,7 @@ class LocalOwnerTests(unittest.TestCase):
             store = WorkingSessions(root / 'data', backend=backend, root=root)
             sid = store.create('Synthetic')['session_id']
             store.add(sid, title='Task', prompt='Synthetic task')
-            row = store.prepare(sid)
+            store.prepare(sid)
             original = store.load(sid)
             original['title'] = 'accessToken: SYNTHETIC_PRIVATE_TITLE'
             original['tasks'][0]['prompt'] = 'accessToken: SYNTHETIC_PRIVATE_PROMPT'
