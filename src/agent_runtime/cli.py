@@ -127,7 +127,15 @@ def parser() -> argparse.ArgumentParser:
 
 
 def output(value) -> None:
-    print(json.dumps(value, ensure_ascii=False, indent=2, allow_nan=False))
+    text = json.dumps(value, ensure_ascii=False, indent=2, allow_nan=False) + "\n"
+    stream = sys.stdout
+    try:
+        stream.write(text)
+    except UnicodeEncodeError:
+        # Legacy Windows code pages (cp1251/cp1252) cannot encode all result characters.
+        stream.flush()
+        stream.buffer.write(text.encode("utf-8"))
+    stream.flush()
 
 
 def main(argv=None) -> int:

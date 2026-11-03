@@ -60,3 +60,27 @@ class ReadPolicyTests(unittest.IsolatedAsyncioTestCase):
                 {"tool_name": "Read", "tool_input": {"file_path": "../outside"}}, None, None
             )
             self.assertEqual(decision["hookSpecificOutput"]["permissionDecision"], "deny")
+
+    async def test_denial_reason_explains_policy_without_echoing_path_or_content(self):
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            (root / "ok.py").write_text("print(1)\n", encoding="utf-8")
+            (root / "secret.key").write_text("CANARY-KEY\n", encoding="utf-8")
+            request = ExecutionRequest(
+                "task", "fixture", root, Limits(2, "0.1", 5), agent_name="read-only-v1"
+            )
+            recorder = Recorder(root / "data", request)
+            hook = ClaudeAdapter({}).options(request, recorder).hooks["PreToolUse"][0].hooks[0]
+            denied = await hook(
+                {"tool_name": "Read", "tool_input": {"file_path": "secret.key"}}, None, None
+            )
+            allowed = await hook(
+                {"tool_name": "Read", "tool_input": {"file_path": "ok.py"}}, None, None
+            )
+            reason = denied["hookSpecificOutput"]["permissionDecisionReason"]
+            self.assertEqual(denied["hookSpecificOutput"]["permissionDecision"], "deny")
+            self.assertIn("read-only-v1 policy", reason)
+            self.assertIn("workspace", reason)
+            self.assertNotIn("secret.key", reason)
+            self.assertNotIn("CANARY", reason)
+            self.assertEqual(allowed["hookSpecificOutput"]["permissionDecision"], "allow")

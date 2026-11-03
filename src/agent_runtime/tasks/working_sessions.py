@@ -456,7 +456,7 @@ class WorkingSessions:
         def q(value):
             return "'" + str(value).replace("\\", "/").replace("'", "''") + "'"
 
-        args = ["&", q(sys.executable), "-B", "-m", "agent_runtime"]
+        args = ["&", q(sys.executable), "-I", "-B", "-m", "agent_runtime"]
         if self.root:
             args += ["--root", q(self.root)]
         args += [

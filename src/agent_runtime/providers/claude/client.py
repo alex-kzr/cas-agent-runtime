@@ -34,7 +34,7 @@ from agent_runtime.providers.claude.context import (
     CONTEXT_SETTINGS,
     context_observation,
 )
-from agent_runtime.providers.claude.permissions import read_allowed
+from agent_runtime.providers.claude.permissions import decision_reason, read_allowed
 from agent_runtime.providers.claude.resume_diagnostics import SCENARIO, observe_rejection
 from agent_runtime.tasks import analysis_privacy, review_profile
 from agent_runtime.tasks.executor import NativeResult
@@ -203,7 +203,7 @@ class ClaudeAdapter:
                 "hookSpecificOutput": {
                     "hookEventName": "PreToolUse",
                     "permissionDecision": "allow" if allow else "deny",
-                    "permissionDecisionReason": request.agent_name,
+                    "permissionDecisionReason": decision_reason(request.agent_name, allow),
                 }
             }
 

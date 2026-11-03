@@ -33,3 +33,19 @@ def _read_allowed(workspace: Path, name: str, arguments: dict) -> bool:
     # This profile is intentionally a bounded single-file reader, with no shell,
     # recursive search, skill or external service capability.
     return target.stat().st_size <= 1_000_000
+
+
+READ_ONLY_DENIAL = (
+    "Denied by CAS read-only-v1 policy: Read accepts only an existing regular file inside "
+    "the task workspace, at most 1 MB, with no hidden (dot) path segment and no key/certificate "
+    "extension (.pem, .key, .p12, .pfx). Other tools and directory listing are unavailable."
+)
+
+
+def decision_reason(agent_name: str, allowed: bool) -> str:
+    """Fixed text shown to the model; never echoes the requested path or file content."""
+    if allowed:
+        return agent_name
+    if agent_name == "read-only-v1":
+        return READ_ONLY_DENIAL
+    return f"Denied by CAS {agent_name} policy: this tool request is outside the profile."

@@ -52,7 +52,7 @@ class SupervisedClaudeAdapter:
         import_error = None
         try:
             code = await owner.run(
-                [sys.executable, "-m", "agent_runtime.providers.claude.worker"],
+                [sys.executable, "-I", "-m", "agent_runtime.providers.claude.worker"],
                 payload,
                 environment,
             )
